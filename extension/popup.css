@@ -1,0 +1,105 @@
+body { width: 360px; min-height: 200px; }
+
+.top { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px 14px; }
+.logo { width: 22px; height: 22px; color: var(--accent); }
+.brand { font-weight: 650; letter-spacing: -.01em; flex: 1; }
+.btn.icon { display: grid; place-items: center; padding: 5px; }
+
+#app { padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 12px; }
+.loading { display: grid; place-items: center; height: 140px; }
+
+/* главный переключатель — «мост» */
+.bridge {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 2px 12px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 14px 16px 14px 16px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: background .25s ease, border-color .25s ease, color .25s ease;
+}
+.bridge:hover { border-color: var(--muted); }
+.bridge .arch {
+  position: absolute; right: 70px; bottom: -18px; width: 150px; height: 84px;
+  color: var(--line); pointer-events: none; opacity: .7;
+}
+.bridge .arch path { stroke-dasharray: 120; stroke-dashoffset: 0; }
+.bridge .state { font-size: 17px; font-weight: 700; letter-spacing: -.01em; position: relative; }
+.bridge .server { grid-column: 1 / 2; position: relative; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bridge .knob {
+  grid-row: 1 / 3; grid-column: 2; position: relative;
+  width: 46px; height: 26px; border-radius: 13px; background: var(--line);
+  transition: background .25s ease;
+}
+.bridge .knob::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .25s ease;
+}
+.bridge.on { background: var(--accent-solid); border-color: var(--accent-solid); color: var(--on-accent); }
+.bridge.on .server { color: var(--on-accent); opacity: .85; }
+.bridge.on .arch { color: rgba(255,255,255,.18); opacity: 1; }
+.bridge.just-on .arch path { animation: draw .9s ease-out both; }
+.bridge.on .knob { background: rgba(255,255,255,.35); }
+.bridge.on .knob::after { transform: translateX(20px); background: #fff; }
+.bridge.problem { border-color: var(--bad); }
+.bridge.problem .state { color: var(--bad); }
+.bridge.problem .knob { background: var(--bad); opacity: .5; }
+.bridge.problem .knob::after { transform: translateX(20px); }
+.bridge:disabled { cursor: progress; }
+@keyframes draw { from { stroke-dashoffset: 120; } to { stroke-dashoffset: 0; } }
+
+/* текущий сайт */
+.site {
+  display: flex; align-items: center; gap: 8px; justify-content: space-between;
+  font-size: 13px; padding: 2px 2px 0;
+}
+.site .host { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site .route { color: var(--muted); }
+.site .route.via { color: var(--accent); }
+
+/* серверы */
+.section-head { display: flex; align-items: center; gap: 4px; padding: 0 2px; }
+.section-head h2 { font-size: 13px; font-weight: 650; margin: 0; flex: 1; }
+.servers { display: flex; flex-direction: column; max-height: 300px; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+.group { font-size: 12px; color: var(--muted); padding: 8px 8px 2px; }
+.srv {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 10px;
+  border: 0; background: transparent; text-align: left; cursor: pointer;
+  padding: 7px 8px 7px 10px; border-radius: var(--radius-sm); position: relative;
+}
+.srv:hover:not(:disabled) { background: var(--surface); }
+.srv .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srv .proto { grid-column: 1; font-size: 11.5px; color: var(--muted); }
+.srv .ping { grid-row: 1 / 3; grid-column: 2; }
+.srv.sel { background: var(--accent-soft); }
+.srv.sel::before {
+  content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--accent);
+}
+.srv.sel .name { font-weight: 650; }
+.srv:disabled { cursor: default; }
+.srv:disabled .name { color: var(--muted); }
+.srv:disabled .proto { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.foot { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; padding: 0 2px; }
+.meter { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; margin: 4px 0 2px; }
+.meter i { display: block; height: 100%; background: var(--accent); }
+
+/* пустые состояния */
+.empty { display: flex; flex-direction: column; gap: 10px; padding: 6px 2px 4px; }
+.empty h1 { font-size: 17px; margin: 0; letter-spacing: -.01em; }
+.empty p { margin: 0; color: var(--muted); }
+.empty ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.row { display: flex; gap: 8px; }
+.row .input { flex: 1; }
+.cmd {
+  display: block; font: 12px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 8px 10px; overflow-wrap: anywhere; user-select: all;
+}

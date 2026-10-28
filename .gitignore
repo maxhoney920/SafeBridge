@@ -1,0 +1,4 @@
+dist/
+.cache/
+host/core/
+keys/*.pem
