@@ -140,7 +140,7 @@ async function applyProxy() {
   try {
     if (active) {
       await chrome.proxy.settings.set({
-        value: { mode: 'pac_script', pacScript: { data: buildPac(st, core.port) } },
+        value: { mode: 'pac_script', pacScript: { data: buildPac(st, core.port, core.selected) } },
         scope: 'regular',
       });
       if (st.webrtc && st.mode === 'all') {

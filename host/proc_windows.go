@@ -111,7 +111,7 @@ func killStaleCore(pidFile string) {
 	c := exec.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(pid), "/FO", "CSV", "/NH")
 	hideWindow(c)
 	out, err := c.Output()
-	if err != nil || !strings.Contains(strings.ToLower(string(out)), "sing-box") {
+	if err != nil || !strings.Contains(strings.ToLower(string(out)), coreName) {
 		return
 	}
 	if p, err := os.FindProcess(pid); err == nil {

@@ -8,12 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
 )
 
-// Server — один сервер из подписки в виде, удобном расширению.
+// Server — один сервер из подписки. Outbound — готовый outbound Xray-core (без tag).
 type Server struct {
 	ID          string         `json:"id"`
 	Name        string         `json:"name"`
@@ -60,6 +61,11 @@ func ParseLink(raw string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	finishServer(s, raw)
+	return s, nil
+}
+
+func finishServer(s *Server, raw string) {
 	if s.Name == "" {
 		s.Name = net.JoinHostPort(s.Address, strconv.Itoa(s.Port))
 	}
@@ -68,7 +74,6 @@ func ParseLink(raw string) (*Server, error) {
 	} else {
 		s.ID = "x" + hashStr(raw)[:10]
 	}
-	return s, nil
 }
 
 func shortName(raw string) string {
@@ -88,7 +93,7 @@ func hashStr(s string) string {
 	return hex.EncodeToString(h[:])
 }
 
-// outboundID — стабильный идентификатор сервера по содержимому outbound (без тега),
+// outboundID — стабильный идентификатор по параметрам подключения (без имени и тега),
 // чтобы выбор пользователя переживал обновление подписки и смену порядка серверов.
 func outboundID(ob map[string]any) string {
 	cp := map[string]any{}
@@ -139,14 +144,6 @@ func (m q) get(keys ...string) string {
 	return ""
 }
 
-func truthy(s string) bool {
-	switch strings.ToLower(s) {
-	case "1", "true", "yes":
-		return true
-	}
-	return false
-}
-
 func splitList(s string) []string {
 	var out []string
 	for _, p := range strings.Split(s, ",") {
@@ -157,133 +154,213 @@ func splitList(s string) []string {
 	return out
 }
 
-var utlsFingerprints = map[string]bool{
+// isPrivateHost — Xray разрешает VLESS без шифрования только на частные адреса.
+func isPrivateHost(h string) bool {
+	if a, err := netip.ParseAddr(strings.Trim(h, "[]")); err == nil {
+		return a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast()
+	}
+	h = strings.ToLower(h)
+	return h == "localhost" || strings.HasSuffix(h, ".local") || strings.HasSuffix(h, ".lan") || !strings.Contains(h, ".")
+}
+
+var fingerprints = map[string]bool{
 	"chrome": true, "firefox": true, "edge": true, "safari": true, "360": true, "qq": true,
-	"ios": true, "android": true, "random": true, "randomized": true,
+	"ios": true, "android": true, "random": true, "randomized": true, "randomizednoalpn": true,
 }
 
-type tlsParams struct {
-	security    string // none | tls | reality
-	sni         string
-	alpn        string
-	fingerprint string
-	insecure    bool
-	publicKey   string
-	shortID     string
-}
-
-func buildTLS(p tlsParams, host string) (map[string]any, error) {
-	if p.security == "" || p.security == "none" {
-		return nil, nil
-	}
-	if p.security != "tls" && p.security != "reality" && p.security != "xtls" {
-		return nil, fmt.Errorf("security=%s не поддерживается", p.security)
-	}
-	t := map[string]any{"enabled": true}
-	sni := p.sni
-	if sni == "" && net.ParseIP(host) == nil {
-		sni = host
-	}
-	if sni != "" {
-		t["server_name"] = sni
-	}
-	if p.insecure {
-		t["insecure"] = true
-	}
-	if a := splitList(p.alpn); len(a) > 0 {
-		t["alpn"] = a
-	}
-	fp := strings.ToLower(p.fingerprint)
-	if p.security == "reality" {
-		if p.publicKey == "" {
-			return nil, errors.New("reality без pbk")
-		}
-		r := map[string]any{"enabled": true, "public_key": p.publicKey}
-		if p.shortID != "" {
-			r["short_id"] = p.shortID
-		}
-		t["reality"] = r
-		if !utlsFingerprints[fp] {
-			fp = "chrome" // для REALITY в sing-box обязателен uTLS
-		}
-	}
-	if utlsFingerprints[fp] {
-		t["utls"] = map[string]any{"enabled": true, "fingerprint": fp}
-	}
-	return t, nil
-}
-
-type transportParams struct {
-	typ         string
+// streamParams — всё, что в ссылке относится к транспорту и шифрованию.
+type streamParams struct {
+	network     string
 	headerType  string
 	host        string
 	path        string
 	serviceName string
+	authority   string
+	mode        string
+	extra       string
+	seed        string
+
+	security    string // none | tls | reality
+	sni         string
+	alpn        string
+	fingerprint string
+	publicKey   string
+	shortID     string
+	spiderX     string
+	pqv         string // mldsa65Verify
+	pcs         string // pinnedPeerCertSha256
+	vcn         string // verifyPeerCertByName
+	ech         string // echConfigList
 }
 
-// buildTransport переводит транспорт xray-ссылки в транспорт sing-box.
-// Возвращает (transport, человекочитаемое имя, ошибку «не поддерживается»).
-func buildTransport(p transportParams) (map[string]any, string, error) {
-	typ := strings.ToLower(p.typ)
-	switch typ {
-	case "", "tcp", "raw":
-		if p.headerType != "" && p.headerType != "none" {
-			return nil, "tcp", fmt.Errorf("tcp с headerType=%s не поддерживается sing-box", p.headerType)
-		}
-		return nil, "tcp", nil
-	case "ws", "websocket":
-		t := map[string]any{"type": "ws"}
-		path := p.path
-		if path == "" {
-			path = "/"
-		}
-		// xray-формат ранних данных: /path?ed=2048
-		if u, err := url.Parse(path); err == nil {
-			if ed := u.Query().Get("ed"); ed != "" {
-				if n, err := strconv.Atoi(ed); err == nil && n > 0 {
-					t["max_early_data"] = n
-					t["early_data_header_name"] = "Sec-WebSocket-Protocol"
-					qv := u.Query()
-					qv.Del("ed")
-					u.RawQuery = qv.Encode()
-					path = u.String()
-				}
-			}
-		}
-		t["path"] = path
-		if p.host != "" {
-			t["headers"] = map[string]any{"Host": p.host}
-		}
-		return t, "ws", nil
-	case "grpc", "gun":
-		t := map[string]any{"type": "grpc"}
-		if p.serviceName != "" {
-			t["service_name"] = p.serviceName
-		}
-		return t, "grpc", nil
-	case "httpupgrade":
-		t := map[string]any{"type": "httpupgrade"}
-		if p.path != "" {
-			t["path"] = p.path
-		}
-		if p.host != "" {
-			t["host"] = p.host
-		}
-		return t, "httpupgrade", nil
-	case "http", "h2":
-		t := map[string]any{"type": "http"}
-		if p.path != "" {
-			t["path"] = p.path
-		}
-		if hs := splitList(p.host); len(hs) > 0 {
-			t["host"] = hs
-		}
-		return t, "h2", nil
-	case "xhttp", "splithttp":
-		return nil, typ, errors.New("транспорт XHTTP не поддерживается sing-box")
-	default:
-		return nil, typ, fmt.Errorf("транспорт %s не поддерживается", typ)
+func streamFromQuery(pq q) streamParams {
+	return streamParams{
+		network: pq.get("type", "network"), headerType: pq.get("headerType"), host: pq.get("host"),
+		path: pq.get("path"), serviceName: pq.get("serviceName", "service_name"), authority: pq.get("authority"),
+		mode: pq.get("mode"), extra: pq.get("extra"), seed: pq.get("seed"),
+		security: strings.ToLower(pq.get("security")), sni: pq.get("sni", "peer", "serverName"), alpn: pq.get("alpn"),
+		fingerprint: pq.get("fp", "fingerprint"), publicKey: pq.get("pbk", "publicKey", "password"),
+		shortID: pq.get("sid", "shortId"), spiderX: pq.get("spx", "spiderX"), pqv: pq.get("pqv"),
+		pcs: pq.get("pcs", "pinnedPeerCertSha256"), vcn: pq.get("vcn", "verifyPeerCertByName"), ech: pq.get("ech"),
 	}
+}
+
+// buildStream собирает streamSettings Xray. Возвращает (настройки, имя транспорта для показа, ошибку «не поддерживается»).
+func buildStream(p streamParams, host string) (map[string]any, string, error) {
+	ss := map[string]any{}
+	network := strings.ToLower(p.network)
+	name := network
+	switch network {
+	case "", "tcp", "raw":
+		ss["network"] = "raw"
+		name = "tcp"
+		if p.headerType == "http" {
+			req := map[string]any{"path": []string{nonEmpty(p.path, "/")}}
+			if hs := splitList(p.host); len(hs) > 0 {
+				req["headers"] = map[string]any{"Host": hs}
+			}
+			ss["rawSettings"] = map[string]any{"header": map[string]any{"type": "http", "request": req}}
+		} else if p.headerType != "" && p.headerType != "none" {
+			return nil, name, fmt.Errorf("tcp с headerType=%s не поддерживается", p.headerType)
+		}
+	case "ws", "websocket":
+		ss["network"] = "ws"
+		name = "ws"
+		ws := map[string]any{"path": nonEmpty(p.path, "/")}
+		if p.host != "" {
+			ws["host"] = p.host
+		}
+		ss["wsSettings"] = ws
+	case "grpc", "gun":
+		ss["network"] = "grpc"
+		name = "grpc"
+		g := map[string]any{}
+		if p.serviceName != "" {
+			g["serviceName"] = p.serviceName
+		}
+		if p.authority != "" {
+			g["authority"] = p.authority
+		}
+		if strings.EqualFold(p.mode, "multi") {
+			g["multiMode"] = true
+		}
+		ss["grpcSettings"] = g
+	case "httpupgrade":
+		ss["network"] = "httpupgrade"
+		h := map[string]any{"path": nonEmpty(p.path, "/")}
+		if p.host != "" {
+			h["host"] = p.host
+		}
+		ss["httpupgradeSettings"] = h
+	case "xhttp", "splithttp":
+		ss["network"] = "xhttp"
+		name = "xhttp"
+		x := map[string]any{"path": nonEmpty(p.path, "/"), "mode": nonEmpty(strings.ToLower(p.mode), "auto")}
+		if p.host != "" {
+			x["host"] = p.host
+		}
+		if p.extra != "" {
+			var extra map[string]any
+			if err := json.Unmarshal([]byte(p.extra), &extra); err != nil {
+				return nil, name, errors.New("некорректный параметр extra у XHTTP")
+			}
+			x["extra"] = extra
+		}
+		ss["xhttpSettings"] = x
+	case "kcp", "mkcp":
+		if (p.headerType != "" && p.headerType != "none") || p.seed != "" {
+			return nil, "kcp", errors.New("mKCP с маскировкой или seed не поддерживается")
+		}
+		ss["network"] = "kcp"
+		name = "kcp"
+	case "http", "h2":
+		return nil, "h2", errors.New("транспорт HTTP/2 удалён из Xray, используйте XHTTP")
+	case "quic":
+		return nil, "quic", errors.New("транспорт QUIC удалён из Xray")
+	default:
+		return nil, network, fmt.Errorf("транспорт %s не поддерживается", network)
+	}
+
+	switch p.security {
+	case "", "none":
+		ss["security"] = "none"
+	case "tls", "xtls":
+		ss["security"] = "tls"
+		t := map[string]any{"fingerprint": fp(p.fingerprint)}
+		if sni := sniFor(p.sni, host); sni != "" {
+			t["serverName"] = sni
+		}
+		if a := splitList(p.alpn); len(a) > 0 {
+			t["alpn"] = a
+		}
+		if p.pcs != "" {
+			t["pinnedPeerCertSha256"] = p.pcs
+		}
+		if p.vcn != "" {
+			t["verifyPeerCertByName"] = p.vcn
+		}
+		if p.ech != "" {
+			t["echConfigList"] = p.ech
+		}
+		ss["tlsSettings"] = t
+	case "reality":
+		if p.publicKey == "" {
+			return nil, name, errors.New("Reality без pbk")
+		}
+		ss["security"] = "reality"
+		r := map[string]any{"publicKey": p.publicKey, "fingerprint": fp(p.fingerprint)}
+		if sni := sniFor(p.sni, host); sni != "" {
+			r["serverName"] = sni
+		}
+		if p.shortID != "" {
+			r["shortId"] = p.shortID
+		}
+		if p.spiderX != "" {
+			r["spiderX"] = p.spiderX
+		}
+		if p.pqv != "" {
+			r["mldsa65Verify"] = p.pqv
+		}
+		ss["realitySettings"] = r
+	default:
+		return nil, name, fmt.Errorf("security=%s не поддерживается", p.security)
+	}
+	return ss, name, nil
+}
+
+func fp(s string) string {
+	s = strings.ToLower(s)
+	if fingerprints[s] {
+		return s
+	}
+	return "chrome"
+}
+
+func sniFor(sni, host string) string {
+	if sni != "" {
+		return sni
+	}
+	if net.ParseIP(strings.Trim(host, "[]")) == nil {
+		return host
+	}
+	return ""
+}
+
+func nonEmpty(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
+}
+
+func securityName(s string) string {
+	switch s {
+	case "", "none":
+		return "none"
+	case "xtls":
+		return "tls"
+	}
+	return s
 }
 
 // parseVLESSLike — vless:// и trojan:// имеют одинаковый формат параметров.
@@ -305,60 +382,40 @@ func parseVLESSLike(raw, proto string) (*Server, error) {
 		return nil, fmt.Errorf("%s: нет UUID/пароля", proto)
 	}
 	pq := newQ(u.Query())
-	s := &Server{Name: fragmentName(u), Protocol: proto, Address: host, Port: port}
-
-	security := strings.ToLower(pq.get("security"))
-	if proto == "trojan" && security == "" {
-		security = "tls"
+	sp := streamFromQuery(pq)
+	if proto == "trojan" && sp.security == "" {
+		sp.security = "tls"
 	}
-	s.Security = security
-	if s.Security == "" {
-		s.Security = "none"
-	}
+	s := &Server{Name: fragmentName(u), Protocol: proto, Address: host, Port: port, Security: securityName(sp.security)}
 
-	tr, trName, trErr := buildTransport(transportParams{
-		typ: pq.get("type"), headerType: pq.get("headerType"), host: pq.get("host"),
-		path: pq.get("path"), serviceName: pq.get("serviceName", "service_name"),
-	})
+	stream, trName, trErr := buildStream(sp, host)
 	s.Transport = trName
 	if trErr != nil {
 		s.Unsupported = trErr.Error()
 		return s, nil
 	}
-	tlsObj, err := buildTLS(tlsParams{
-		security: security, sni: pq.get("sni", "peer", "serverName"), alpn: pq.get("alpn"),
-		fingerprint: pq.get("fp", "fingerprint"), insecure: truthy(pq.get("allowInsecure", "insecure")),
-		publicKey: pq.get("pbk", "publicKey"), shortID: pq.get("sid", "shortId"),
-	}, host)
-	if err != nil {
-		s.Unsupported = err.Error()
-		return s, nil
-	}
 
-	ob := map[string]any{"type": proto, "server": host, "server_port": port}
+	ob := map[string]any{"protocol": proto, "streamSettings": stream}
 	if proto == "vless" {
-		ob["uuid"] = cred
+		enc := pq.get("encryption")
+		if enc == "" {
+			enc = "none"
+		}
+		if enc == "none" && s.Security == "none" && !isPrivateHost(host) {
+			s.Unsupported = "VLESS без TLS/Reality на публичный адрес запрещён в Xray"
+			return s, nil
+		}
+		user := map[string]any{"id": cred, "encryption": enc}
 		if flow := pq.get("flow"); flow != "" {
 			if flow != "xtls-rprx-vision" && flow != "xtls-rprx-vision-udp443" {
 				s.Unsupported = "flow " + flow + " не поддерживается"
 				return s, nil
 			}
-			ob["flow"] = "xtls-rprx-vision"
+			user["flow"] = flow
 		}
-		pe := strings.ToLower(pq.get("packetEncoding"))
-		if pe == "" || pe == "xudp" {
-			ob["packet_encoding"] = "xudp"
-		} else if pe == "packetaddr" {
-			ob["packet_encoding"] = "packetaddr"
-		}
+		ob["settings"] = map[string]any{"vnext": []any{map[string]any{"address": host, "port": port, "users": []any{user}}}}
 	} else {
-		ob["password"] = cred
-	}
-	if tlsObj != nil {
-		ob["tls"] = tlsObj
-	}
-	if tr != nil {
-		ob["transport"] = tr
+		ob["settings"] = map[string]any{"servers": []any{map[string]any{"address": host, "port": port, "password": cred}}}
 	}
 	s.Outbound = ob
 	return s, nil
@@ -372,7 +429,6 @@ func decodeB64(s string) ([]byte, error) {
 			return b, nil
 		}
 	}
-	// иногда паддинг обрезан частично
 	if m := len(s) % 4; m != 0 {
 		return decodeB64(s + strings.Repeat("=", 4-m))
 	}
@@ -380,7 +436,7 @@ func decodeB64(s string) ([]byte, error) {
 }
 
 func parseVMess(raw string) (*Server, error) {
-	body := strings.TrimPrefix(raw[len("vmess://"):], "")
+	body := raw[len("vmess://"):]
 	frag := ""
 	if j := strings.Index(body, "#"); j >= 0 {
 		frag, _ = url.PathUnescape(body[j+1:])
@@ -408,56 +464,41 @@ func parseVMess(raw string) (*Server, error) {
 	if err != nil || host == "" {
 		return nil, errors.New("vmess: нет адреса или порта")
 	}
-	s := &Server{Name: str("ps"), Protocol: "vmess", Address: host, Port: port}
-	if s.Name == "" {
-		s.Name = frag
+	id := str("id")
+	if id == "" {
+		return nil, errors.New("vmess: нет UUID")
 	}
-	security := strings.ToLower(str("tls"))
-	s.Security = security
-	if s.Security == "" {
-		s.Security = "none"
+	s := &Server{Name: nonEmpty(str("ps"), frag), Protocol: "vmess", Address: host, Port: port, Security: securityName(strings.ToLower(str("tls")))}
+	if aid, _ := strconv.Atoi(str("aid")); aid > 0 {
+		s.Unsupported = "VMess с alterId больше 0 не поддерживается в Xray"
+		return s, nil
 	}
-	net_ := str("net")
-	tp := transportParams{typ: net_, headerType: str("type"), host: str("host"), path: str("path")}
-	if strings.EqualFold(net_, "grpc") {
-		tp.serviceName = str("path")
+	sp := streamParams{network: str("net"), headerType: str("type"), host: str("host"), path: str("path"),
+		mode: str("mode"), security: strings.ToLower(str("tls")), sni: str("sni"), alpn: str("alpn"), fingerprint: str("fp")}
+	if strings.EqualFold(sp.network, "grpc") {
+		sp.serviceName = str("path")
 	}
-	tr, trName, trErr := buildTransport(tp)
+	if strings.EqualFold(sp.network, "kcp") {
+		sp.seed = str("path")
+	}
+	stream, trName, trErr := buildStream(sp, host)
 	s.Transport = trName
 	if trErr != nil {
 		s.Unsupported = trErr.Error()
 		return s, nil
 	}
-	tlsObj, err := buildTLS(tlsParams{security: security, sni: str("sni"), alpn: str("alpn"), fingerprint: str("fp"),
-		insecure: truthy(str("allowInsecure"))}, host)
-	if err != nil {
-		s.Unsupported = err.Error()
-		return s, nil
-	}
-	aid, _ := strconv.Atoi(str("aid"))
-	cipher := str("scy")
-	if cipher == "" {
-		cipher = "auto"
-	}
-	ob := map[string]any{"type": "vmess", "server": host, "server_port": port, "uuid": str("id"),
-		"security": cipher, "alter_id": aid, "packet_encoding": "xudp"}
-	if ob["uuid"] == "" {
-		return nil, errors.New("vmess: нет UUID")
-	}
-	if tlsObj != nil {
-		ob["tls"] = tlsObj
-	}
-	if tr != nil {
-		ob["transport"] = tr
-	}
-	s.Outbound = ob
+	cipher := nonEmpty(str("scy"), "auto")
+	s.Outbound = map[string]any{"protocol": "vmess", "streamSettings": stream, "settings": map[string]any{
+		"vnext": []any{map[string]any{"address": host, "port": port, "users": []any{map[string]any{"id": id, "security": cipher}}}}}}
 	return s, nil
 }
 
-var ssMethods = map[string]bool{
-	"2022-blake3-aes-128-gcm": true, "2022-blake3-aes-256-gcm": true, "2022-blake3-chacha20-poly1305": true,
-	"aes-128-gcm": true, "aes-192-gcm": true, "aes-256-gcm": true, "chacha20-ietf-poly1305": true,
-	"xchacha20-ietf-poly1305": true, "none": true,
+var ssMethods = map[string]string{
+	"2022-blake3-aes-128-gcm": "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm": "2022-blake3-aes-256-gcm",
+	"2022-blake3-chacha20-poly1305": "2022-blake3-chacha20-poly1305",
+	"aes-128-gcm":                   "aes-128-gcm", "aes-256-gcm": "aes-256-gcm",
+	"chacha20-ietf-poly1305": "chacha20-poly1305", "chacha20-poly1305": "chacha20-poly1305",
+	"xchacha20-ietf-poly1305": "xchacha20-poly1305", "xchacha20-poly1305": "xchacha20-poly1305", "none": "none",
 }
 
 func parseSS(raw string) (*Server, error) {
@@ -506,16 +547,18 @@ func parseSS(raw string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{Name: strings.TrimSpace(name), Protocol: "shadowsocks", Address: h, Port: port, Transport: "tcp"}
+	s := &Server{Name: strings.TrimSpace(name), Protocol: "shadowsocks", Address: h, Port: port, Transport: "tcp", Security: "none"}
 	if qv, _ := url.ParseQuery(query); qv.Get("plugin") != "" {
 		s.Unsupported = "плагины Shadowsocks не поддерживаются"
 		return s, nil
 	}
-	if !ssMethods[method] {
+	xm, ok := ssMethods[method]
+	if !ok {
 		s.Unsupported = "метод " + method + " не поддерживается"
 		return s, nil
 	}
-	s.Outbound = map[string]any{"type": "shadowsocks", "server": h, "server_port": port, "method": method, "password": password}
+	s.Outbound = map[string]any{"protocol": "shadowsocks", "settings": map[string]any{
+		"servers": []any{map[string]any{"address": h, "port": port, "method": xm, "password": password}}}}
 	return s, nil
 }
 
@@ -528,14 +571,11 @@ func parseHy2(raw string) (*Server, error) {
 		return nil, fmt.Errorf("hysteria2: %v", err)
 	}
 	host := u.Hostname()
-	pstr := u.Port()
-	if pstr == "" {
-		pstr = "443"
-	}
+	pstr := nonEmpty(u.Port(), "443")
 	pq := newQ(u.Query())
 	s := &Server{Name: fragmentName(u), Protocol: "hysteria2", Address: host, Transport: "quic", Security: "tls"}
-	if strings.ContainsAny(pstr, ",-") {
-		s.Unsupported = "диапазоны портов hysteria2 не поддерживаются"
+	if strings.ContainsAny(pstr, ",-") || pq.get("mport") != "" {
+		s.Unsupported = "диапазоны портов Hysteria2 не поддерживаются"
 		return s, nil
 	}
 	port, err := parsePort(pstr)
@@ -547,66 +587,110 @@ func parseHy2(raw string) (*Server, error) {
 	if pw, ok := u.User.Password(); ok {
 		auth += ":" + pw
 	}
-	tlsObj, _ := buildTLS(tlsParams{security: "tls", sni: pq.get("sni", "peer"), alpn: pq.get("alpn"),
-		insecure: truthy(pq.get("insecure", "allowInsecure"))}, host)
-	ob := map[string]any{"type": "hysteria2", "server": host, "server_port": port, "password": auth, "tls": tlsObj}
+	tls := map[string]any{"fingerprint": fp(pq.get("fp")), "alpn": []string{"h3"}}
+	if sni := sniFor(pq.get("sni", "peer"), host); sni != "" {
+		tls["serverName"] = sni
+	}
+	if v := pq.get("pinSHA256", "pcs"); v != "" {
+		tls["pinnedPeerCertSha256"] = strings.ReplaceAll(strings.ToLower(v), ":", "")
+	}
+	stream := map[string]any{"network": "hysteria", "security": "tls", "tlsSettings": tls,
+		"hysteriaSettings": map[string]any{"version": 2, "auth": auth}}
 	if obfs := pq.get("obfs"); obfs != "" && obfs != "none" {
 		if obfs != "salamander" {
 			s.Unsupported = "obfs " + obfs + " не поддерживается"
 			return s, nil
 		}
-		ob["obfs"] = map[string]any{"type": "salamander", "password": pq.get("obfs-password", "obfs_password")}
+		stream["finalmask"] = map[string]any{"udp": []any{map[string]any{"type": "salamander",
+			"settings": map[string]any{"password": pq.get("obfs-password", "obfs_password")}}}}
 	}
-	s.Outbound = ob
+	s.Outbound = map[string]any{"protocol": "hysteria", "streamSettings": stream,
+		"settings": map[string]any{"version": 2, "address": host, "port": port}}
 	return s, nil
 }
 
-// serversFromSingBoxJSON достаёт поддерживаемые outbounds из готового конфига sing-box
-// (так отвечают панели, если подписку запросили с UA sing-box).
-func serversFromSingBoxJSON(b []byte) ([]*Server, error) {
-	var cfg struct {
-		Outbounds []map[string]any `json:"outbounds"`
+// serversFromXrayJSON достаёт серверы из JSON-подписки Xray: массив полных конфигов
+// или один конфиг (так отвечают панели на User-Agent клиентов, которые понимают JSON).
+func serversFromXrayJSON(b []byte) ([]*Server, error) {
+	var configs []map[string]any
+	if err := json.Unmarshal(b, &configs); err != nil {
+		var one map[string]any
+		if err2 := json.Unmarshal(b, &one); err2 != nil {
+			return nil, err
+		}
+		configs = []map[string]any{one}
 	}
-	if err := json.Unmarshal(b, &cfg); err != nil {
-		return nil, err
-	}
-	allowed := map[string]bool{"vless": true, "vmess": true, "trojan": true, "shadowsocks": true, "hysteria2": true}
+	allowed := map[string]bool{"vless": true, "vmess": true, "trojan": true, "shadowsocks": true, "hysteria": true}
 	var out []*Server
-	for _, ob := range cfg.Outbounds {
-		typ, _ := ob["type"].(string)
-		if !allowed[typ] {
-			continue
-		}
-		name, _ := ob["tag"].(string)
-		host, _ := ob["server"].(string)
-		port := 0
-		if f, ok := ob["server_port"].(float64); ok {
-			port = int(f)
-		}
-		delete(ob, "tag")
-		delete(ob, "detour")
-		delete(ob, "domain_resolver")
-		s := &Server{Name: name, Protocol: typ, Address: host, Port: port, Outbound: ob}
-		if tr, ok := ob["transport"].(map[string]any); ok {
-			s.Transport, _ = tr["type"].(string)
-		} else {
-			s.Transport = "tcp"
-		}
-		if t, ok := ob["tls"].(map[string]any); ok && t["enabled"] == true {
-			s.Security = "tls"
-			if r, ok := t["reality"].(map[string]any); ok && r["enabled"] == true {
-				s.Security = "reality"
+	for _, cfg := range configs {
+		obs, _ := cfg["outbounds"].([]any)
+		remarks, _ := cfg["remarks"].(string)
+		for _, x := range obs {
+			ob, _ := x.(map[string]any)
+			if ob == nil {
+				continue
 			}
-		} else {
-			s.Security = "none"
+			if _, singbox := ob["type"]; singbox {
+				return nil, errors.New("это JSON-подписка sing-box: укажите в настройках User-Agent v2rayN")
+			}
+			proto, _ := ob["protocol"].(string)
+			if !allowed[proto] {
+				continue
+			}
+			tag, _ := ob["tag"].(string)
+			delete(ob, "tag")
+			delete(ob, "proxySettings")
+			if ss, ok := ob["streamSettings"].(map[string]any); ok {
+				if so, ok := ss["sockopt"].(map[string]any); ok {
+					delete(so, "dialerProxy")
+				}
+			}
+			name := remarks
+			if name == "" || (len(obs) > 1 && tag != "" && tag != "proxy") {
+				name = nonEmpty(tag, remarks)
+			}
+			s := &Server{Name: name, Protocol: proto, Outbound: ob}
+			if proto == "hysteria" {
+				s.Protocol = "hysteria2"
+			}
+			s.Address, s.Port = xrayTarget(ob)
+			if ss, ok := ob["streamSettings"].(map[string]any); ok {
+				s.Transport, _ = ss["network"].(string)
+				s.Security, _ = ss["security"].(string)
+			}
+			if s.Transport == "" || s.Transport == "raw" {
+				s.Transport = "tcp"
+			}
+			s.Security = securityName(s.Security)
+			finishServer(s, string(b))
+			out = append(out, s)
+			break // в каждом конфиге берём первый подходящий outbound
 		}
-		s.ID = outboundID(ob)
-		out = append(out, s)
 	}
 	return out, nil
 }
 
-// dedupe убирает повторы и делает теги уникальными.
+func xrayTarget(ob map[string]any) (string, int) {
+	st, _ := ob["settings"].(map[string]any)
+	pick := func(m map[string]any) (string, int) {
+		a, _ := m["address"].(string)
+		p, _ := m["port"].(float64)
+		return a, int(p)
+	}
+	for _, k := range []string{"vnext", "servers"} {
+		if l, ok := st[k].([]any); ok && len(l) > 0 {
+			if m, ok := l[0].(map[string]any); ok {
+				return pick(m)
+			}
+		}
+	}
+	if st != nil {
+		return pick(st)
+	}
+	return "", 0
+}
+
+// dedupe убирает повторы.
 func dedupe(in []*Server) []*Server {
 	seen := map[string]bool{}
 	var out []*Server

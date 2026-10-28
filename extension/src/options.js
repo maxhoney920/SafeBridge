@@ -79,7 +79,7 @@ function subsSection() {
 
   return el('section', { id: 'subs' },
     el('h2', { text: 'Подписки' }),
-    el('p', { class: 'lead', text: `Серверы берутся из ссылки-подписки и обновляются автоматически каждые ${fmtInterval(state.intervalMin)}. Поддерживаются VLESS (Reality, TLS, WebSocket, gRPC, HTTPUpgrade), Trojan, VMess, Shadowsocks и Hysteria2.` }),
+    el('p', { class: 'lead', text: `Серверы берутся из ссылки-подписки и обновляются автоматически каждые ${fmtInterval(state.intervalMin)}. Поддерживаются VLESS (Reality, TLS, Vision, XHTTP, WebSocket, gRPC, HTTPUpgrade, VLESS Encryption), Trojan, VMess, Shadowsocks и Hysteria2.` }),
     el('div', { class: 'stack' },
       cards,
       el('div', { class: 'card stack' },
@@ -189,7 +189,7 @@ function helperSection() {
   const h = state.host;
   const items = h ? [
     ['Помощник', `${h.version} (${h.os}/${h.arch})`],
-    ['Ядро', h.core ? `sing-box ${h.core}` : (h.coreError || 'не найдено')],
+    ['Ядро', h.core ? `Xray ${h.core}` : (h.coreError || 'не найдено')],
     ['Состояние', state.core.running ? `работает, локальный порт ${state.core.port}` : (state.coreError || 'остановлено')],
   ] : [['Помощник', state.hostError || 'не подключён']];
   return el('section', { id: 'helper' },

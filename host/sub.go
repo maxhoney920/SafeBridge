@@ -46,7 +46,7 @@ func FetchSubscription(ctx context.Context, rawURL, ua string, proxyPort int) (*
 	body, hdr, errDirect := httpGet(ctx, u.String(), ua, nil)
 	via := "direct"
 	if errDirect != nil && proxyPort > 0 {
-		proxyURL, _ := url.Parse("http://127.0.0.1:" + strconv.Itoa(proxyPort))
+		proxyURL, _ := url.Parse("socks5://127.0.0.1:" + strconv.Itoa(proxyPort))
 		var errProxy error
 		body, hdr, errProxy = httpGet(ctx, u.String(), ua, proxyURL)
 		if errProxy != nil {
@@ -92,15 +92,15 @@ func httpGet(ctx context.Context, u, ua string, proxy *url.URL) ([]byte, http.He
 	return b, resp.Header, nil
 }
 
-// ParseSubscription понимает: base64-список ссылок, обычный список ссылок, JSON-конфиг sing-box.
+// ParseSubscription понимает: base64-список ссылок, обычный список ссылок, JSON-конфиги Xray.
 func ParseSubscription(body []byte) (*SubResult, error) {
 	body = bytes.TrimSpace(bytes.TrimPrefix(body, []byte("\xef\xbb\xbf")))
 	if len(body) == 0 {
 		return nil, errors.New("подписка пустая")
 	}
 	res := &SubResult{}
-	if body[0] == '{' {
-		servers, err := serversFromSingBoxJSON(body)
+	if body[0] == '{' || body[0] == '[' {
+		servers, err := serversFromXrayJSON(body)
 		if err != nil {
 			return nil, fmt.Errorf("не удалось разобрать JSON подписки: %v", err)
 		}

@@ -63,7 +63,7 @@ func allowedOrigins(extra []string) []string {
 func manifestJSON(exePath string, extra []string) []byte {
 	m := map[string]any{
 		"name":            hostName,
-		"description":     "VlessBridge native helper (sing-box)",
+		"description":     "VlessBridge native helper (Xray-core)",
 		"path":            exePath,
 		"type":            "stdio",
 		"allowed_origins": allowedOrigins(extra),
@@ -127,7 +127,7 @@ func runInstall(extraIDs []string) error {
 		if v == "" {
 			v = "?"
 		}
-		fmt.Printf("• Ядро sing-box %s: %s\n", v, p)
+		fmt.Printf("• Ядро Xray %s: %s\n", v, p)
 	}
 	man := manifestJSON(exe, extraIDs)
 	if runtime.GOOS == "windows" {

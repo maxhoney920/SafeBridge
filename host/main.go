@@ -46,7 +46,7 @@ func main() {
 	case "uninstall":
 		runUninstall()
 	case "version":
-		fmt.Printf("vlessbridge %s, sing-box %s\n", version, CoreVersion())
+		fmt.Printf("vlessbridge %s, Xray %s\n", version, CoreVersion())
 	case "parse":
 		// отладка: vlessbridge parse <файл подписки>
 		if len(args) < 1 {

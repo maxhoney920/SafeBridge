@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -25,7 +24,10 @@ import (
 	"time"
 )
 
-const selectorTag = "proxy"
+const (
+	balancerTag = "proxy"
+	coreName    = "xray"
+)
 
 func exeName(n string) string {
 	if runtime.GOOS == "windows" {
@@ -34,7 +36,7 @@ func exeName(n string) string {
 	return n
 }
 
-// ---------- бинарник sing-box ----------
+// ---------- бинарник Xray ----------
 
 var (
 	corePathOnce sync.Once
@@ -44,8 +46,8 @@ var (
 	coreVer      string
 )
 
-// CorePath возвращает путь к sing-box: распаковывает встроенный бинарник
-// в каталог данных или ищет рядом с программой / в PATH (для разработки).
+// CorePath возвращает путь к Xray: распаковывает встроенный бинарник в каталог данных
+// или ищет рядом с программой / в PATH (для разработки).
 func CorePath() (string, error) {
 	corePathOnce.Do(func() { corePath, corePathErr = resolveCore() })
 	return corePath, corePathErr
@@ -55,8 +57,7 @@ func resolveCore() (string, error) {
 	if len(embeddedCore) > 0 {
 		sum := sha256.Sum256(embeddedCore)
 		dir := filepath.Join(dataDir(), "core")
-		name := exeName("sing-box-" + hex.EncodeToString(sum[:4]))
-		p := filepath.Join(dir, name)
+		p := filepath.Join(dir, exeName(coreName+"-"+hex.EncodeToString(sum[:4])))
 		if st, err := os.Stat(p); err == nil && st.Size() > 0 {
 			return p, nil
 		}
@@ -81,8 +82,9 @@ func resolveCore() (string, error) {
 		if err := os.Rename(tmp, p); err != nil {
 			return "", err
 		}
-		// удаляем старые версии ядра
-		if old, _ := filepath.Glob(filepath.Join(dir, "sing-box-*")); len(old) > 0 {
+		// удаляем старые версии ядра (в том числе sing-box от прошлых версий помощника)
+		for _, pat := range []string{coreName + "-*", "sing-box-*"} {
+			old, _ := filepath.Glob(filepath.Join(dir, pat))
 			for _, o := range old {
 				if o != p {
 					os.Remove(o)
@@ -93,18 +95,18 @@ func resolveCore() (string, error) {
 	}
 	var cands []string
 	if exe, err := os.Executable(); err == nil {
-		cands = append(cands, filepath.Join(filepath.Dir(exe), exeName("sing-box")))
+		cands = append(cands, filepath.Join(filepath.Dir(exe), exeName(coreName)))
 	}
-	cands = append(cands, filepath.Join(dataDir(), "core", exeName("sing-box")))
+	cands = append(cands, filepath.Join(dataDir(), "core", exeName(coreName)))
 	for _, c := range cands {
 		if st, err := os.Stat(c); err == nil && !st.IsDir() {
 			return c, nil
 		}
 	}
-	if p, err := exec.LookPath("sing-box"); err == nil {
+	if p, err := exec.LookPath(coreName); err == nil {
 		return p, nil
 	}
-	return "", errors.New("ядро sing-box не найдено (эта сборка помощника без встроенного ядра)")
+	return "", errors.New("ядро Xray не найдено (эта сборка помощника без встроенного ядра)")
 }
 
 func CoreVersion() string {
@@ -119,8 +121,11 @@ func CoreVersion() string {
 		if err != nil {
 			return
 		}
-		line := strings.SplitN(string(out), "\n", 2)[0]
-		coreVer = strings.TrimSpace(strings.TrimPrefix(line, "sing-box version"))
+		// "Xray 26.9.30 (Xray, Penetrates Everything.) ..."
+		f := strings.Fields(strings.SplitN(string(out), "\n", 2)[0])
+		if len(f) >= 2 {
+			coreVer = f[1]
+		}
 	})
 	return coreVer
 }
@@ -132,51 +137,95 @@ type ApplyServer struct {
 	Outbound map[string]any `json:"outbound"`
 }
 
-func buildConfig(servers []ApplyServer, selected string, port, apiPort int, secret string) ([]byte, error) {
-	if len(servers) == 0 {
-		return nil, errors.New("нет поддерживаемых серверов")
-	}
-	tags := make([]string, 0, len(servers))
-	outbounds := []any{}
+// частные сети всегда идут напрямую; списком, чтобы не зависеть от geoip.dat
+var privateCIDRs = []string{"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16",
+	"172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/4", "::1/128", "fc00::/7", "fe80::/10"}
+
+type coreLayout struct {
+	port     int
+	apiPort  int
+	testPort map[string]int // сервер → локальный SOCKS-порт для пинга
+	tags     []string
+	selected string
+}
+
+func validServers(servers []ApplyServer) []ApplyServer {
+	var out []ApplyServer
 	seen := map[string]bool{}
 	for _, s := range servers {
-		if s.ID == "" || s.Outbound == nil || seen[s.ID] || s.ID == selectorTag || s.ID == "direct" {
+		if s.ID == "" || s.Outbound == nil || seen[s.ID] || s.ID == balancerTag || s.ID == "direct" || s.ID == "api" {
 			continue
 		}
 		seen[s.ID] = true
+		out = append(out, s)
+	}
+	return out
+}
+
+func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
+	servers = validServers(servers)
+	if len(servers) == 0 {
+		return nil, errors.New("нет поддерживаемых серверов")
+	}
+	l.tags = nil
+	for _, s := range servers {
+		l.tags = append(l.tags, s.ID)
+	}
+	if !contains(l.tags, l.selected) {
+		l.selected = l.tags[0]
+	}
+	inbounds := []any{
+		map[string]any{"tag": "main", "listen": "127.0.0.1", "port": l.port, "protocol": "socks",
+			"settings": map[string]any{"auth": "noauth", "udp": true}},
+		map[string]any{"tag": "api", "listen": "127.0.0.1", "port": l.apiPort, "protocol": "dokodemo-door",
+			"settings": map[string]any{"address": "127.0.0.1"}},
+	}
+	rules := []any{
+		map[string]any{"inboundTag": []string{"api"}, "outboundTag": "api"},
+	}
+	var outbounds []any
+	for _, s := range servers {
 		ob := map[string]any{}
 		for k, v := range s.Outbound {
 			ob[k] = v
 		}
 		ob["tag"] = s.ID
-		tags = append(tags, s.ID)
 		outbounds = append(outbounds, ob)
+		if tp := l.testPort[s.ID]; tp > 0 {
+			in := "t-" + s.ID
+			inbounds = append(inbounds, map[string]any{"tag": in, "listen": "127.0.0.1", "port": tp, "protocol": "socks",
+				"settings": map[string]any{"auth": "noauth"}})
+			rules = append(rules, map[string]any{"inboundTag": []string{in}, "outboundTag": s.ID})
+		}
 	}
-	if len(tags) == 0 {
-		return nil, errors.New("нет поддерживаемых серверов")
-	}
-	if !seen[selected] {
-		selected = tags[0]
-	}
-	sel := map[string]any{"type": "selector", "tag": selectorTag, "outbounds": tags, "default": selected,
-		"interrupt_exist_connections": true}
-	all := append([]any{sel}, outbounds...)
-	all = append(all, map[string]any{"type": "direct", "tag": "direct"})
+	outbounds = append(outbounds, map[string]any{"tag": "direct", "protocol": "freedom"})
+	rules = append(rules,
+		map[string]any{"ip": privateCIDRs, "outboundTag": "direct"},
+		map[string]any{"domain": []string{"localhost"}, "outboundTag": "direct"},
+		map[string]any{"inboundTag": []string{"main"}, "balancerTag": balancerTag},
+	)
 	cfg := map[string]any{
-		"log": map[string]any{"level": "warn", "timestamp": true},
-		"dns": map[string]any{"servers": []any{map[string]any{"type": "local", "tag": "local"}}},
-		"inbounds": []any{map[string]any{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1",
-			"listen_port": port}},
-		"outbounds": all,
-		"route": map[string]any{
-			"rules":                   []any{map[string]any{"ip_is_private": true, "outbound": "direct"}},
-			"final":                   selectorTag,
-			"default_domain_resolver": "local",
+		"log":       map[string]any{"loglevel": "warning", "access": "none", "dnsLog": false},
+		"api":       map[string]any{"tag": "api", "services": []string{"RoutingService"}},
+		"inbounds":  inbounds,
+		"outbounds": outbounds,
+		"routing": map[string]any{
+			"domainStrategy": "AsIs",
+			// fallbackTag требует observatory, поэтому выбор задаётся сразу после запуска через `api bo`
+			"balancers": []any{map[string]any{"tag": balancerTag, "selector": l.tags}},
+			"rules":     rules,
 		},
-		"experimental": map[string]any{"clash_api": map[string]any{
-			"external_controller": "127.0.0.1:" + strconv.Itoa(apiPort), "secret": secret}},
 	}
 	return json.MarshalIndent(cfg, "", "  ")
+}
+
+func contains(l []string, s string) bool {
+	for _, x := range l {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------- процесс ----------
@@ -185,11 +234,8 @@ type Core struct {
 	mu       sync.Mutex
 	cmd      *exec.Cmd
 	done     chan struct{}
-	port     int
-	apiPort  int
-	secret   string
+	layout   coreLayout
 	hash     string
-	selected string
 	stopping bool
 	logs     *ring
 	onExit   func(msg string)
@@ -208,7 +254,7 @@ func NewCore(onExit func(string)) *Core {
 func (c *Core) Status() CoreStatus {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return CoreStatus{Running: c.cmd != nil, Port: c.port, Selected: c.selected}
+	return CoreStatus{Running: c.cmd != nil, Port: c.layout.port, Selected: c.layout.selected}
 }
 
 func (c *Core) LogTail(n int) []string { return c.logs.tail(n) }
@@ -225,66 +271,75 @@ func portFree(p int) bool {
 	return true
 }
 
-func randomPort() (int, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
+// freePorts занимает n свободных портов одновременно, чтобы они не совпали.
+func freePorts(n int) ([]int, error) {
+	var ls []net.Listener
+	defer func() {
+		for _, l := range ls {
+			l.Close()
+		}
+	}()
+	var out []int
+	for i := 0; i < n; i++ {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return nil, err
+		}
+		ls = append(ls, l)
+		out = append(out, l.Addr().(*net.TCPAddr).Port)
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port, nil
-}
-
-func randomHex(n int) string {
-	b := make([]byte, n)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+	return out, nil
 }
 
 // Apply запускает (или перезапускает) ядро с заданным набором серверов.
 // Если набор не изменился — только переключает выбранный сервер, без перезапуска.
 func (c *Core) Apply(servers []ApplyServer, selected string, preferredPort int) (CoreStatus, error) {
+	servers = validServers(servers)
 	hashBytes, _ := json.Marshal(servers)
 	h := sha256.Sum256(hashBytes)
 	hash := hex.EncodeToString(h[:])
 
 	c.mu.Lock()
 	running := c.cmd != nil
-	same := running && c.hash == hash && (preferredPort <= 0 || preferredPort == c.port)
+	same := running && c.hash == hash && (preferredPort <= 0 || preferredPort == c.layout.port)
+	prevPort := c.layout.port
 	c.mu.Unlock()
 	if same {
-		if err := c.Select(selected); err != nil {
-			return c.Status(), err
-		}
-		return c.Status(), nil
-	}
-
-	// проверяем набор до остановки работающего ядра, чтобы ошибка не оставила пользователя без прокси
-	if _, err := buildConfig(servers, selected, 1, 1, "x"); err != nil {
+		err := c.Select(selected)
 		return c.Status(), err
 	}
-	c.Stop()
-
+	if len(servers) == 0 {
+		return c.Status(), errors.New("нет поддерживаемых серверов")
+	}
 	corePath, err := CorePath()
 	if err != nil {
 		return c.Status(), err
 	}
+	c.Stop()
+
 	port := 0
 	switch {
 	case preferredPort > 0 && portFree(preferredPort):
 		port = preferredPort
-	case c.port > 0 && portFree(c.port):
-		port = c.port
-	default:
-		if port, err = randomPort(); err != nil {
-			return c.Status(), err
-		}
+	case prevPort > 0 && portFree(prevPort):
+		port = prevPort
 	}
-	apiPort, err := randomPort()
+	need := len(servers) + 1
+	if port == 0 {
+		need++
+	}
+	ports, err := freePorts(need)
 	if err != nil {
 		return c.Status(), err
 	}
-	secret := randomHex(16)
-	cfg, err := buildConfig(servers, selected, port, apiPort, secret)
+	if port == 0 {
+		port, ports = ports[0], ports[1:]
+	}
+	l := coreLayout{port: port, apiPort: ports[0], testPort: map[string]int{}, selected: selected}
+	for i, s := range servers {
+		l.testPort[s.ID] = ports[1+i]
+	}
+	cfg, err := buildConfig(servers, &l)
 	if err != nil {
 		return c.Status(), err
 	}
@@ -297,8 +352,9 @@ func (c *Core) Apply(servers []ApplyServer, selected string, preferredPort int) 
 
 	killStaleCore(filepath.Join(dir, "core.pid"))
 
-	cmd := exec.Command(corePath, "run", "-c", cfgPath, "--disable-color")
+	cmd := exec.Command(corePath, "run", "-c", cfgPath)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+dir)
 	prepareChild(cmd)
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw
@@ -321,15 +377,14 @@ func (c *Core) Apply(servers []ApplyServer, selected string, preferredPort int) 
 	}()
 	if err := cmd.Start(); err != nil {
 		pw.Close()
-		return c.Status(), fmt.Errorf("не удалось запустить sing-box: %v", err)
+		return c.Status(), fmt.Errorf("не удалось запустить Xray: %v", err)
 	}
 	afterStart(cmd)
 	os.WriteFile(filepath.Join(dir, "core.pid"), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600)
 
 	done := make(chan struct{})
 	c.mu.Lock()
-	c.cmd, c.done, c.port, c.apiPort, c.secret, c.hash, c.stopping = cmd, done, port, apiPort, secret, hash, false
-	c.selected = ""
+	c.cmd, c.done, c.layout, c.hash, c.stopping = cmd, done, l, hash, false
 	c.mu.Unlock()
 
 	go func() {
@@ -345,7 +400,7 @@ func (c *Core) Apply(servers []ApplyServer, selected string, preferredPort int) 
 		c.mu.Unlock()
 		os.Remove(filepath.Join(dir, "core.pid"))
 		if !intentional && c.onExit != nil {
-			msg := "ядро sing-box завершилось"
+			msg := "ядро Xray завершилось"
 			if err != nil {
 				msg += ": " + err.Error()
 			}
@@ -353,29 +408,23 @@ func (c *Core) Apply(servers []ApplyServer, selected string, preferredPort int) 
 		}
 	}()
 
-	// ждём, пока поднимется API
+	// ждём, пока поднимется API, и сразу закрепляем выбранный сервер
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		select {
 		case <-done:
 			time.Sleep(100 * time.Millisecond)
-			return c.Status(), fmt.Errorf("sing-box не запустился:\n%s", strings.Join(c.logs.tail(15), "\n"))
+			return c.Status(), fmt.Errorf("Xray не запустился:\n%s", strings.Join(c.logs.tail(15), "\n"))
 		default:
 		}
-		if _, err := c.api(http.MethodGet, "/version", nil, 1*time.Second); err == nil {
+		if c.override(l.selected, 1) == nil {
 			break
 		}
 		if time.Now().After(deadline) {
 			c.Stop()
-			return c.Status(), errors.New("sing-box не ответил за 10 секунд")
+			return c.Status(), errors.New("Xray не ответил за 10 секунд")
 		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	if err := c.Select(selected); err != nil {
-		// выбранного сервера нет — остаётся сервер по умолчанию
-		c.mu.Lock()
-		c.selected = servers[0].ID
-		c.mu.Unlock()
+		time.Sleep(150 * time.Millisecond)
 	}
 	return c.Status(), nil
 }
@@ -399,73 +448,80 @@ func (c *Core) Stop() {
 	}
 }
 
-func (c *Core) api(method, path string, body any, timeout time.Duration) ([]byte, error) {
+// override переключает балансировщик на сервер через `xray api bo`.
+func (c *Core) override(id string, timeoutSec int) error {
 	c.mu.Lock()
-	apiPort, secret := c.apiPort, c.secret
+	apiPort := c.layout.apiPort
 	c.mu.Unlock()
-	if apiPort == 0 {
-		return nil, errors.New("ядро не запущено")
-	}
-	var rd io.Reader
-	if body != nil {
-		b, _ := json.Marshal(body)
-		rd = bytes.NewReader(b)
-	}
-	req, err := http.NewRequest(method, "http://127.0.0.1:"+strconv.Itoa(apiPort)+path, rd)
+	p, err := CorePath()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+secret)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	cl := &http.Client{Timeout: timeout, Transport: &http.Transport{Proxy: nil}}
-	resp, err := cl.Do(req)
+	cmd := exec.Command(p, "api", "bo", "--server=127.0.0.1:"+strconv.Itoa(apiPort),
+		"-t", strconv.Itoa(timeoutSec), "-b", balancerTag, id)
+	hideWindow(cmd)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode >= 300 {
-		var m struct {
-			Message string `json:"message"`
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
 		}
-		json.Unmarshal(b, &m)
-		if m.Message == "" {
-			m.Message = resp.Status
-		}
-		return b, errors.New(m.Message)
+		return errors.New(msg)
 	}
-	return b, nil
+	return nil
 }
 
 func (c *Core) Select(id string) error {
 	if id == "" {
 		return errors.New("сервер не указан")
 	}
-	if _, err := c.api(http.MethodPut, "/proxies/"+url.PathEscape(selectorTag), map[string]string{"name": id}, 3*time.Second); err != nil {
+	c.mu.Lock()
+	running := c.cmd != nil
+	known := contains(c.layout.tags, id)
+	c.mu.Unlock()
+	if !running {
+		return errors.New("ядро не запущено")
+	}
+	if !known {
+		return errors.New("сервер не найден в текущем наборе")
+	}
+	if err := c.override(id, 3); err != nil {
 		return err
 	}
 	c.mu.Lock()
-	c.selected = id
+	c.layout.selected = id
 	c.mu.Unlock()
 	return nil
 }
 
-// Delay измеряет задержку через конкретный сервер (Clash API URL-test).
+// Delay измеряет время ответа testURL через конкретный сервер (через его тестовый SOCKS-порт).
 func (c *Core) Delay(id, testURL string, timeoutMs int) int {
-	path := "/proxies/" + url.PathEscape(id) + "/delay?timeout=" + strconv.Itoa(timeoutMs) + "&url=" + url.QueryEscape(testURL)
-	b, err := c.api(http.MethodGet, path, nil, time.Duration(timeoutMs+2000)*time.Millisecond)
+	c.mu.Lock()
+	tp := c.layout.testPort[id]
+	c.mu.Unlock()
+	if tp == 0 {
+		return -1
+	}
+	proxy, _ := url.Parse("socks5://127.0.0.1:" + strconv.Itoa(tp))
+	tr := &http.Transport{Proxy: http.ProxyURL(proxy), DisableKeepAlives: true, ForceAttemptHTTP2: false}
+	defer tr.CloseIdleConnections()
+	cl := &http.Client{Transport: tr, Timeout: time.Duration(timeoutMs) * time.Millisecond,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	req, err := http.NewRequest(http.MethodGet, testURL, nil)
 	if err != nil {
 		return -1
 	}
-	var r struct {
-		Delay int `json:"delay"`
-	}
-	if json.Unmarshal(b, &r) != nil || r.Delay <= 0 {
+	start := time.Now()
+	resp, err := cl.Do(req)
+	if err != nil {
 		return -1
 	}
-	return r.Delay
+	resp.Body.Close()
+	d := int(time.Since(start).Milliseconds())
+	if d < 1 {
+		d = 1
+	}
+	return d
 }
 
 func (c *Core) DelayMany(ctx context.Context, ids []string, testURL string, timeoutMs int) map[string]int {

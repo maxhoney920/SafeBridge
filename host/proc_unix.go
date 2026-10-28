@@ -25,7 +25,7 @@ func terminate(cmd *exec.Cmd) {
 }
 
 // killStaleCore убивает ядро, оставшееся от аварийно завершённого помощника,
-// только если PID действительно принадлежит sing-box.
+// только если PID действительно принадлежит ядру.
 func killStaleCore(pidFile string) {
 	b, err := os.ReadFile(pidFile)
 	if err != nil {
@@ -37,7 +37,7 @@ func killStaleCore(pidFile string) {
 		return
 	}
 	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output()
-	if err != nil || !strings.Contains(string(out), "sing-box") {
+	if err != nil || !strings.Contains(string(out), coreName) {
 		return
 	}
 	syscall.Kill(pid, syscall.SIGTERM)

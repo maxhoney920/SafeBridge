@@ -56,9 +56,12 @@ export function domainMatches(host, list) {
 }
 
 // PAC-скрипт: решение «через прокси или напрямую» по домену.
-export function buildPac({ mode, include, exclude }, port) {
+// tag меняется при смене сервера: Chrome видит новую конфигурацию прокси и закрывает
+// старые соединения, иначе открытые сайты ещё какое-то время шли бы через прежний сервер.
+export function buildPac({ mode, include, exclude }, port, tag = '') {
   const list = mode === 'include' ? include : mode === 'exclude' ? exclude : [];
-  return `var P = "SOCKS5 127.0.0.1:${port}";
+  return `// server: ${String(tag).replace(/[^\w-]/g, '')}
+var P = "SOCKS5 127.0.0.1:${port}";
 var M = ${JSON.stringify(mode)};
 var D = ${JSON.stringify(list)};
 function inList(h) {
@@ -121,7 +124,8 @@ export function protoLabel(s) {
   const extra = [];
   if (s.security === 'reality') extra.push('Reality');
   else if (s.security === 'tls' && s.protocol !== 'trojan' && s.protocol !== 'hysteria2') extra.push('TLS');
-  if (s.transport && !['tcp', 'quic', ''].includes(s.transport)) extra.push(s.transport.toUpperCase());
+  const tr = { xhttp: 'XHTTP', ws: 'WS', grpc: 'gRPC', httpupgrade: 'HTTPUpgrade', kcp: 'mKCP' }[s.transport];
+  if (tr) extra.push(tr);
   return [p, ...extra].join(' + ');
 }
 
