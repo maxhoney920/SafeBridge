@@ -1,10 +1,10 @@
 #!/bin/sh
 # Установка помощника VlessBridge на macOS и Linux:
-#   curl -fsSL https://github.com/maxhoney920/SafeBridge/releases/latest/download/install.sh | sh
+#   curl -fsSL https://github.com/maxhoney920/SafeBridge/raw/downloads/install.sh | sh
 set -eu
 
 REPO="${VLESSBRIDGE_REPO:-maxhoney920/SafeBridge}"
-BASE="https://github.com/$REPO/releases/latest/download"
+BASE="https://github.com/$REPO/raw/downloads"
 
 case "$(uname -s)" in
   Darwin) os=darwin ;;

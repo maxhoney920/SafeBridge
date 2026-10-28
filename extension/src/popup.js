@@ -1,4 +1,4 @@
-import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, normalizeDomain, DOWNLOAD_BASE, RELEASES_URL } from './common.js';
+import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, DOWNLOAD_BASE, DOWNLOADS_PAGE, helperDownload, MODES, LIST_NAMES } from './common.js';
 
 const app = document.getElementById('app');
 let state = null;
@@ -51,36 +51,42 @@ function viewMissingHost() {
     el('h1', { text: 'Установите помощник' }),
     el('p', { text: 'Расширение подключается к серверам через небольшую программу на компьютере. Её нужно установить один раз, права администратора не понадобятся.' }),
   );
-  const dl = el('div', { class: 'row' });
-  box.append(dl);
   chrome.runtime.getPlatformInfo().then((p) => {
-    const os = { win: 'windows', mac: 'darwin', linux: 'linux' }[p.os];
-    const arch = p.arch === 'arm64' || p.arch === 'arm' ? 'arm64' : 'amd64';
-    let steps;
-    if (os === 'windows') {
-      dl.append(el('a', { class: 'btn primary', href: `${DOWNLOAD_BASE}vlessbridge-windows-${arch}.exe`, target: '_blank', text: 'Скачать для Windows' }));
-      steps = [
-        'Запустите скачанный файл. Если Windows предупредит о неизвестном издателе, нажмите «Подробнее», затем «Выполнить в любом случае».',
-        'Вернитесь сюда и нажмите «Проверить».',
-      ];
-    } else {
+    const d = helperDownload(p);
+    const row = el('div', { class: 'row' });
+    if (d) row.append(el('a', { class: 'btn primary', href: DOWNLOAD_BASE + d.file, download: d.file, text: `Скачать для ${d.name}` }));
+    row.append(el('a', { class: 'btn', href: DOWNLOADS_PAGE, target: '_blank', text: 'Другие системы' }));
+    box.append(row);
+    const steps = {
+      windows: [
+        'Откройте скачанный файл.',
+        'Если Windows покажет «Система Windows защитила ваш компьютер», нажмите «Подробнее», затем «Выполнить в любом случае».',
+        'Когда в окне появится «Готово», вернитесь сюда и нажмите «Проверить».',
+      ],
+      darwin: [
+        'Откройте скачанный архив — рядом появится файл vlessbridge.',
+        'Откройте его двойным щелчком. macOS скажет, что не может проверить разработчика: нажмите «Готово», затем в Системных настройках → «Конфиденциальность и безопасность» нажмите «Всё равно открыть».',
+        'Когда в окне Терминала появится «Готово», вернитесь сюда и нажмите «Проверить».',
+      ],
+      linux: [
+        'Откройте терминал в папке загрузок и выполните: chmod +x ' + (d?.file || 'vlessbridge-linux-*') + ' && ./' + (d?.file || 'vlessbridge-linux-*'),
+        'Когда появится «Готово», вернитесь сюда и нажмите «Проверить».',
+      ],
+    }[d?.os] || ['Скачайте помощник для своей системы и запустите его.'];
+    box.append(el('ol', { class: 'small' }, steps.map((t) => el('li', { text: t }))));
+    if (d && d.os !== 'windows') {
       const cmd = `curl -fsSL ${DOWNLOAD_BASE}install.sh | sh`;
-      const copyBtn = el('button', { class: 'btn primary', text: 'Скопировать команду' });
+      const copyBtn = el('button', { class: 'btn quiet', text: 'Скопировать' });
       copyBtn.addEventListener('click', async () => {
         await navigator.clipboard.writeText(cmd).catch(() => {});
         copyBtn.textContent = 'Скопировано';
       });
-      dl.append(copyBtn);
-      box.append(el('code', { class: 'cmd', text: cmd }));
-      steps = [
-        os === 'darwin' ? 'Откройте Терминал (Программы → Утилиты), вставьте команду и нажмите Return.' : 'Откройте терминал, вставьте команду и нажмите Enter.',
-        'Вернитесь сюда и нажмите «Проверить».',
-      ];
+      box.append(el('details', { class: 'alt small' },
+        el('summary', { text: 'Или одной командой в терминале' }),
+        el('code', { class: 'cmd', text: cmd }), copyBtn));
     }
-    dl.append(el('a', { class: 'btn', href: RELEASES_URL, target: '_blank', text: 'Все версии' }));
-    box.append(el('ol', { class: 'small' }, steps.map((t) => el('li', { text: t }))),
-      el('div', {}, el('button', { class: 'btn', onclick: () => act('retryHost', {}, 'retry'), disabled: pendingAction === 'retry' },
-        pendingAction === 'retry' ? el('span', { class: 'spinner' }) : 'Проверить')));
+    box.append(el('div', {}, el('button', { class: 'btn', onclick: () => act('retryHost', {}, 'retry'), disabled: pendingAction === 'retry' },
+      pendingAction === 'retry' ? el('span', { class: 'spinner' }) : 'Проверить')));
     if (state.hostError && !state.hostMissing) box.append(el('div', { class: 'notice', text: state.hostError }));
   });
   return box;
@@ -139,42 +145,58 @@ function svgArch() {
 }
 
 function modeSwitch() {
-  const opts = [['all', 'Все сайты'], ['include', 'Только список'], ['exclude', 'Кроме списка']];
   return el('div', { class: 'segments', role: 'radiogroup', 'aria-label': 'Какие сайты открывать через VPN' },
-    opts.map(([v, t]) => el('label', {},
+    Object.entries(MODES).map(([v, m]) => el('label', {},
       el('input', { type: 'radio', name: 'mode', value: v, checked: state.mode === v, onchange: () => act('setMode', { mode: v }, 'mode') }),
-      el('span', { text: t }))));
+      el('span', { text: m.label }))));
 }
 
-function siteRow() {
-  if (state.mode === 'all' || !tabHost) {
-    if (state.mode === 'all') return null;
-    return el('div', { class: 'site muted' }, el('span', { text: listSummary() }),
-      el('button', { class: 'btn quiet', onclick: () => openOptions('sites'), text: 'Изменить список' }));
+function modeHint() {
+  const box = el('div', { class: 'mode-hint' }, el('span', { text: MODES[state.mode].hint }));
+  if (state.mode !== 'all') {
+    const n = state[state.mode].length;
+    box.append(' ', el('a', { href: '#', onclick: (e) => { e.preventDefault(); openOptions('sites'); },
+      text: n ? `В списке ${n} ${plural(n, 'сайт', 'сайта', 'сайтов')}` : 'Список пока пуст — добавить сайты' }));
   }
-  const listKey = state.mode;
-  const match = domainMatches(tabHost, state[listKey]);
-  const viaVpn = state.mode === 'include' ? !!match : !match;
-  const domain = normalizeDomain(tabHost.replace(/^www\./, ''));
-  let btn;
-  if (match) {
-    btn = el('button', { class: 'btn', onclick: () => act('removeSite', { list: listKey, domain: match }, 'site'),
-      text: state.mode === 'include' ? 'Не через VPN' : 'Через VPN' });
+  return box;
+}
+
+// Строка про открытую вкладку: как она сейчас открывается и кнопка, чтобы это изменить.
+function siteRow() {
+  if (state.mode === 'all' || !tabHost) return null;
+  const key = state.mode;
+  const match = domainMatches(tabHost, state[key]);
+  const viaVpn = key === 'include' ? !!match : !match;
+  const domain = siteDomain(tabHost);
+  const list = LIST_NAMES[key];
+  let reason, btn;
+  if (key === 'include') {
+    reason = match ? `в списке: ${match}` : 'нет в списке';
+    btn = match
+      ? el('button', { class: 'btn', title: `Убрать ${match} из списка ${list}`, onclick: () => act('removeSite', { list: key, domain: match }, 'site'), text: 'Убрать из списка' })
+      : el('button', { class: 'btn primary', title: `Добавить ${domain} в список ${list}`, onclick: () => act('addSite', { list: key, domain }, 'site'), text: 'Открывать через VPN' });
   } else {
-    btn = el('button', { class: 'btn', onclick: () => act('addSite', { list: listKey, domain }, 'site'),
-      text: state.mode === 'include' ? 'Через VPN' : 'Напрямую' });
+    reason = match ? `в исключениях: ${match}` : 'нет в исключениях';
+    btn = match
+      ? el('button', { class: 'btn', title: `Убрать ${match} из списка ${list}`, onclick: () => act('removeSite', { list: key, domain: match }, 'site'), text: 'Открывать через VPN' })
+      : el('button', { class: 'btn', title: `Добавить ${domain} в список ${list}`, onclick: () => act('addSite', { list: key, domain }, 'site'), text: 'Открывать без VPN' });
   }
   return el('div', { class: 'site' },
-    el('div', { style: 'min-width:0' },
+    el('div', { class: 'site-text' },
       el('div', { class: 'host', text: tabHost }),
-      el('div', { class: 'route small' + (viaVpn ? ' via' : ''), text: viaVpn ? 'открывается через VPN' : 'открывается напрямую' })),
+      el('div', { class: 'route small' + (viaVpn ? ' via' : '') },
+        el('b', { text: viaVpn ? 'Через VPN' : 'Без VPN' }), ` — ${reason}`)),
     btn);
 }
 
-function listSummary() {
-  const n = state[state.mode]?.length || 0;
-  const w = n % 10 === 1 && n % 100 !== 11 ? 'сайт' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'сайта' : 'сайтов';
-  return n ? `В списке ${n} ${w}` : 'Список сайтов пуст';
+function updateBanner() {
+  const h = state.updates?.helper;
+  if (!h?.available) return null;
+  const busy = state.busy.updateHelper || pendingAction === 'updateHelper';
+  return el('div', { class: 'update' },
+    el('span', { text: busy ? 'Обновляю помощник…' : `Вышла новая версия помощника ${h.latest}` }),
+    el('button', { class: 'btn quiet', disabled: busy, onclick: () => act('updateHelper', {}, 'updateHelper') },
+      busy ? el('span', { class: 'spinner' }) : 'Обновить'));
 }
 
 function serverList(servers) {
@@ -225,7 +247,9 @@ function viewMain() {
     nodes.push(el('div', { class: 'notice', text: 'Настройками прокси управляет другое расширение. Отключите его, чтобы VlessBridge заработал.' }));
   }
   if (actionError) nodes.push(el('div', { class: 'notice', text: actionError }));
-  nodes.push(modeSwitch());
+  const ub = updateBanner();
+  if (ub) nodes.push(ub);
+  nodes.push(el('div', { class: 'mode' }, modeSwitch(), modeHint()));
   const sr = siteRow();
   if (sr) nodes.push(sr);
   const busyRefresh = state.busy.refresh || pendingAction === 'refresh';
@@ -263,7 +287,8 @@ function render() {
 (async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const u = new URL(tab?.url || '');
+    // ?tab=<адрес> — открыть окно расширения для конкретной страницы (удобно для проверки)
+    const u = new URL(new URLSearchParams(location.search).get('tab') || tab?.url || '');
     if (u.protocol === 'http:' || u.protocol === 'https:') tabHost = u.hostname;
   } catch {}
   await reload();

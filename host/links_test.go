@@ -246,3 +246,18 @@ func TestBuildConfig(t *testing.T) {
 		t.Fatal("последнее правило — балансировщик")
 	}
 }
+
+func TestCompareVersions(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want int
+	}{
+		{"26.10.21", "26.9.30", 1}, {"v26.9.30", "26.9.30", 0}, {"0.2.0", "0.10.0", -1},
+		{"", "26.9.30", -1}, {"dev", "0.1.0", -1}, {"1.2", "1.2.0", 0},
+	}
+	for _, c := range cases {
+		if got := compareVersions(c.a, c.b); got != c.want {
+			t.Errorf("compareVersions(%q,%q)=%d, want %d", c.a, c.b, got, c.want)
+		}
+	}
+}

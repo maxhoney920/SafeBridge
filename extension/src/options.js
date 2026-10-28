@@ -1,4 +1,4 @@
-import { el, send, fmtBytes, fmtAgo, fmtDate, PRESETS, normalizeDomain, plural } from './common.js';
+import { el, send, fmtBytes, fmtAgo, fmtDate, PRESETS_VPN, PRESETS_DIRECT, normalizeDomain, plural, MODES, LIST_NAMES, DOWNLOADS_PAGE } from './common.js';
 
 const app = document.getElementById('app');
 let state = null;
@@ -100,9 +100,9 @@ function fmtInterval(min) {
 
 const drafts = {};
 
-function listCard(key, title, desc) {
+function listCard(key, title, desc, examples, presetsList) {
   const value = drafts[key] ?? state[key].join('\n');
-  const ta = el('textarea', { class: 'input', spellcheck: 'false', 'aria-label': title, placeholder: 'youtube.com\ninstagram.com' });
+  const ta = el('textarea', { class: 'input', spellcheck: 'false', 'aria-label': title, placeholder: examples });
   ta.value = value;
   ta.addEventListener('input', () => { drafts[key] = ta.value; });
   const saveList = async () => {
@@ -118,8 +118,9 @@ function listCard(key, title, desc) {
     render();
   };
   const current = new Set((drafts[key] ?? state[key].join('\n')).split(/[\s,]+/).map(normalizeDomain).filter(Boolean));
-  const presets = key === 'include' && el('div', { class: 'presets' },
-    PRESETS.map((p) => {
+  const presets = el('div', { class: 'presets' },
+    el('span', { class: 'presets-label', text: 'Быстро добавить:' }),
+    presetsList.map((p) => {
       const added = p.domains.every((d) => current.has(d));
       return el('button', {
         class: 'chip' + (added ? ' added' : ''), title: p.domains.join(', '),
@@ -132,26 +133,45 @@ function listCard(key, title, desc) {
       }, (added ? '− ' : '+ ') + p.name);
     }));
   const dirty = drafts[key] != null && drafts[key] !== state[key].join('\n');
-  return el('div', { class: 'card list-card' + (state.mode === key ? ' active' : '') },
-    el('h3', { text: title }),
+  const active = state.mode === key;
+  return el('div', { class: 'card list-card' + (active ? ' active' : '') },
+    el('div', { class: 'list-head' },
+      el('h3', { text: title }),
+      active ? el('span', { class: 'badge', text: 'Используется сейчас' })
+        : el('button', { class: 'btn quiet', onclick: () => act('setMode', { mode: key }, 'mode', `Режим «${MODES[key].label}» включён`), text: `Включить режим «${MODES[key].label}»` })),
     el('p', { text: desc }),
     ta,
     presets,
     el('div', { class: 'row', style: 'margin-top:10px' },
       el('button', { class: 'btn primary', onclick: saveList, disabled: busy[key] || !dirty }, busy[key] ? spin() : 'Сохранить'),
-      dirty && el('button', { class: 'btn quiet', onclick: () => { delete drafts[key]; render(); }, text: 'Отменить' }),
-      state.mode !== key && el('button', { class: 'btn quiet', onclick: () => act('setMode', { mode: key }, 'mode', 'Режим включён'), text: 'Включить этот режим' })),
+      dirty && el('button', { class: 'btn quiet', onclick: () => { delete drafts[key]; render(); }, text: 'Отменить' })),
     errors[key] && el('div', { class: 'notice', style: 'margin-top:10px', text: errors[key] }));
 }
 
 function sitesSection() {
-  const modeText = { all: 'Сейчас через VPN открываются все сайты.', include: 'Сейчас через VPN открываются только сайты из первого списка.', exclude: 'Сейчас через VPN открываются все сайты, кроме второго списка.' }[state.mode];
+  const modes = el('div', { class: 'modes' }, Object.entries(MODES).map(([k, m]) =>
+    el('label', { class: 'mode-opt' + (state.mode === k ? ' cur' : '') },
+      el('input', { type: 'radio', name: 'mode-o', checked: state.mode === k, onchange: () => act('setMode', { mode: k }, 'mode', `Режим «${m.label}» включён`) }),
+      el('span', {}, el('b', { text: m.label }), el('span', { class: 'muted', text: m.hint })))));
   return el('section', { id: 'sites' },
     el('h2', { text: 'Сайты' }),
-    el('p', { class: 'lead', text: `${modeText} Режим переключается в окне расширения: «Все сайты», «Только список» или «Кроме списка». Каждый домен в списке включает и все его поддомены. Сайт можно добавить прямо из окна расширения, находясь на нём.` }),
+    el('p', { class: 'lead', text: 'Выберите, какие сайты открывать через VPN. То же самое переключается в окне расширения.' }),
+    el('div', { class: 'card' }, modes),
     el('div', { class: 'lists' },
-      listCard('include', 'Только эти сайты через VPN', 'Для режима «Только список». Остальные сайты открываются напрямую.'),
-      listCard('exclude', 'Эти сайты напрямую', 'Для режима «Кроме списка». Например, банки и госуслуги, которые не открываются из-за рубежа.')));
+      listCard('include', `Список ${LIST_NAMES.include}`,
+        'Работает в режиме «Только список». Сюда — сайты, которые без VPN не открываются или работают плохо. Все остальные сайты пойдут напрямую.',
+        'youtube.com\ninstagram.com\nchatgpt.com', PRESETS_VPN),
+      listCard('exclude', `Список ${LIST_NAMES.exclude}`,
+        'Работает в режиме «Исключения». Сюда — сайты, которым нужен ваш обычный адрес: банки, Госуслуги, маркетплейсы и сайты, которые не пускают из-за рубежа.',
+        'gosuslugi.ru\nsberbank.ru\nru', PRESETS_DIRECT)),
+    el('div', { class: 'card rules' },
+      el('h3', { text: 'Как записывать сайты' }),
+      el('ul', {},
+        el('li', {}, 'Один сайт на строку. Можно вставить адрес страницы целиком — останется только домен.'),
+        el('li', {}, el('code', { text: 'youtube.com' }), ' включает все поддомены: ', el('code', { text: 'www.youtube.com' }), ', ', el('code', { text: 'm.youtube.com' }), ' и другие. Но не ', el('code', { text: 'youtube.ru' }), ' — это другой сайт.'),
+        el('li', {}, el('code', { text: 'ru' }), ' (или ', el('code', { text: '.ru' }), ', ', el('code', { text: 'рф' }), ') — целиком доменная зона: все сайты, которые заканчиваются на .ru.'),
+        el('li', {}, 'Большие сайты подгружают видео и картинки с других доменов. YouTube, например, берёт видео с googlevideo.com. Готовые наборы выше уже включают такие домены.'),
+        el('li', {}, 'Проще всего добавлять прямо с сайта: откройте его, нажмите на значок расширения и кнопку «Открывать через VPN» или «Открывать без VPN».'))));
 }
 
 // ---------- параметры ----------
@@ -187,24 +207,52 @@ function settingsSection() {
 
 function helperSection() {
   const h = state.host;
+  const u = state.updates || {};
   const items = h ? [
     ['Помощник', `${h.version} (${h.os}/${h.arch})`],
     ['Ядро', h.core ? `Xray ${h.core}` : (h.coreError || 'не найдено')],
     ['Состояние', state.core.running ? `работает, локальный порт ${state.core.port}` : (state.coreError || 'остановлено')],
   ] : [['Помощник', state.hostError || 'не подключён']];
+
+  const helperLine = !u.checkedAt ? 'ещё не проверялось'
+    : u.helper?.error ? `не удалось проверить: ${u.helper.error}`
+    : u.helper?.available ? `доступна версия ${u.helper.latest}` : 'установлена последняя версия';
+  const coreLine = !u.checkedAt ? 'ещё не проверялось'
+    : u.core?.error ? `не удалось проверить: ${u.core.error}`
+    : u.core?.available ? `доступна версия ${u.core.latest}` : 'установлена последняя версия'
+    + (u.core?.lastResult ? ` (${u.core.lastResult})` : '');
+  const autoCore = el('input', { type: 'checkbox', id: 'autoCore', checked: state.autoCore, onchange: (e) => act('setAutoCore', { on: e.target.checked }, 'autoCore') });
+
   return el('section', { id: 'helper' },
-    el('h2', { text: 'Помощник' }),
-    el('p', { class: 'lead', text: 'Программа на компьютере, которая держит соединение с сервером. Браузер запускает её сам и останавливает при закрытии.' }),
-    el('div', { class: 'card' },
+    el('h2', { text: 'Помощник и обновления' }),
+    el('p', { class: 'lead', text: 'Помощник — программа на компьютере, которая держит соединение с сервером через ядро Xray. Браузер запускает её сам и останавливает при закрытии. Раз в сутки расширение проверяет обновления на GitHub.' }),
+    el('div', { class: 'card stack' },
       el('dl', { class: 'kv' }, items.map(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })])),
-      el('div', { class: 'row', style: 'margin-top:14px' },
+      h && el('div', { class: 'updates' },
+        el('div', { class: 'upd-row' },
+          el('div', {}, el('b', { text: 'Помощник' }), el('div', { class: 'muted small', text: helperLine })),
+          u.helper?.available && el('button', { class: 'btn primary', disabled: state.busy.updateHelper || busy.updateHelper,
+            onclick: () => act('updateHelper', {}, 'updateHelper', 'Помощник обновлён') }, state.busy.updateHelper || busy.updateHelper ? spin() : `Обновить до ${u.helper.latest}`)),
+        el('div', { class: 'upd-row' },
+          el('div', {}, el('b', { text: 'Ядро Xray' }), el('div', { class: 'muted small', text: coreLine })),
+          u.core?.available && el('button', { class: 'btn primary', disabled: state.busy.updateCore || busy.updateCore,
+            onclick: () => act('updateCore', {}, 'updateCore', 'Ядро обновлено') }, state.busy.updateCore || busy.updateCore ? spin() : `Обновить до ${u.core.latest}`)),
+        el('label', { class: 'check' }, autoCore, el('span', { text: 'Обновлять ядро Xray автоматически' })),
+        el('div', { class: 'muted small', text: 'Перед переключением новое ядро проверяется на ваших серверах. Если оно их не примет или не запустится, останется прежняя версия.' }),
+        el('div', { class: 'row' },
+          el('button', { class: 'btn', disabled: state.busy.updates || busy.checkUpdates, onclick: () => act('checkUpdates', {}, 'checkUpdates') },
+            state.busy.updates || busy.checkUpdates ? spin() : 'Проверить обновления'),
+          u.checkedAt && el('span', { class: 'muted small', text: `проверено ${new Date(u.checkedAt).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}` }),
+          el('a', { class: 'small', href: DOWNLOADS_PAGE, target: '_blank', text: 'Все файлы на GitHub' }))),
+      ['updateHelper', 'updateCore', 'checkUpdates'].map((k) => errors[k] && el('div', { class: 'notice', text: errors[k] })),
+      el('div', { class: 'row' },
         el('button', { class: 'btn', disabled: busy.diag, onclick: async () => {
           const r = await act('diag', {}, 'diag');
           if (r) logText = `Каталог данных: ${r.dataDir}\n\n${(r.log || []).join('\n') || 'Журнал ядра пуст.'}`;
           render();
         } }, busy.diag ? spin() : 'Показать журнал ядра'),
-        el('button', { class: 'btn', onclick: () => act('retryHost', {}, 'retry', 'Помощник перезапущен'), disabled: busy.retry }, busy.retry ? spin() : 'Переподключить')),
-      errors.diag && el('div', { class: 'notice', style: 'margin-top:10px', text: errors.diag }),
+        el('button', { class: 'btn', onclick: () => act('retryHost', {}, 'retry', 'Помощник переподключён'), disabled: busy.retry }, busy.retry ? spin() : 'Переподключить')),
+      errors.diag && el('div', { class: 'notice', text: errors.diag }),
       logText && el('pre', { class: 'log', text: logText })));
 }
 

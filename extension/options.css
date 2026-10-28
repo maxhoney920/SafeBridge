@@ -57,3 +57,22 @@ pre.log { margin: 12px 0 0; max-height: 300px; overflow: auto; background: var(-
   .field .hint { grid-column: 1; }
   .kv { grid-template-columns: 1fr; }
 }
+
+.list-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin-bottom: 2px; }
+.list-head h3 { white-space: nowrap; }
+.list-head .btn.quiet { padding-left: 0; }
+.list-head h3 { margin: 0; }
+.badge { font-size: 12px; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.presets-label { font-size: 12.5px; color: var(--muted); align-self: center; margin-right: 2px; }
+.modes { display: flex; flex-direction: column; gap: 4px; }
+.mode-opt { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; }
+.mode-opt input { margin-top: 4px; accent-color: var(--accent-solid); }
+.mode-opt > span { display: flex; flex-direction: column; }
+.mode-opt.cur { background: var(--accent-soft); }
+.lists { margin-top: 16px; }
+.rules { margin-top: 16px; }
+.rules h3 { margin: 0 0 6px; font-size: 15px; }
+.rules ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+.rules code { font: 12.5px ui-monospace, Menlo, Consolas, monospace; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+.updates { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
+.upd-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

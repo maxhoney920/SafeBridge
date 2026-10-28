@@ -88,6 +88,7 @@ func runHost() {
 		defer f.Close()
 	}
 	log.Printf("host %s started, pid %d", version, os.Getpid())
+	cleanupOldHelper()
 
 	h := &Host{out: os.Stdout}
 	h.core = NewCore(func(msg string) {
@@ -131,11 +132,18 @@ func (h *Host) handle(req request) {
 	h.send(response{ID: req.ID, OK: true, Result: res})
 }
 
+func (h *Host) proxyPort() int {
+	if st := h.core.Status(); st.Running {
+		return st.Port
+	}
+	return 0
+}
+
 func (h *Host) dispatch(req request) (any, error) {
 	switch req.Cmd {
 	case "hello":
 		_, coreErr := CorePath()
-		r := map[string]any{"version": version, "core": CoreVersion(), "os": runtime.GOOS, "arch": runtime.GOARCH,
+		r := map[string]any{"version": version, "core": CoreVersion(), "bundledCore": bundledXray, "os": runtime.GOOS, "arch": runtime.GOARCH,
 			"status": h.core.Status()}
 		if coreErr != nil {
 			r["coreError"] = coreErr.Error()
@@ -199,6 +207,35 @@ func (h *Host) dispatch(req request) (any, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 		return h.core.DelayMany(ctx, a.IDs, a.URL, a.TimeoutMs), nil
+
+	case "checkUpdates":
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		return CheckUpdates(ctx, h.proxyPort()), nil
+
+	case "updateCore":
+		var a struct {
+			Version string `json:"version"`
+		}
+		json.Unmarshal(req.Args, &a)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		return h.core.UpdateCore(ctx, a.Version, h.proxyPort())
+
+	case "updateHelper":
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		res, err := UpdateHelper(ctx, h.proxyPort())
+		if err == nil && res["updated"] == true {
+			// ответить и завершиться: браузер запустит новую версию при переподключении
+			go func() {
+				time.Sleep(500 * time.Millisecond)
+				h.core.Stop()
+				log.Println("помощник обновлён, перезапуск")
+				os.Exit(0)
+			}()
+		}
+		return res, err
 
 	case "stop":
 		h.core.Stop()

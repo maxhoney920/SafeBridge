@@ -39,65 +39,71 @@ func exeName(n string) string {
 // ---------- бинарник Xray ----------
 
 var (
-	corePathOnce sync.Once
-	corePath     string
-	corePathErr  error
-	coreVerOnce  sync.Once
-	coreVer      string
+	coreMu      sync.Mutex
+	corePath    string
+	corePathErr error
+	coreVer     string
 )
 
-// CorePath возвращает путь к Xray: распаковывает встроенный бинарник в каталог данных
-// или ищет рядом с программой / в PATH (для разработки).
+// CorePath возвращает путь к активному ядру Xray: скачанное обновление (core/active.json),
+// встроенное в помощник или найденное рядом с программой / в PATH (для разработки).
 func CorePath() (string, error) {
-	corePathOnce.Do(func() { corePath, corePathErr = resolveCore() })
+	coreMu.Lock()
+	defer coreMu.Unlock()
+	if corePath == "" && corePathErr == nil {
+		corePath, corePathErr = resolveCore()
+	}
 	return corePath, corePathErr
 }
 
+// resetCoreCache — после обновления или отката ядра.
+func resetCoreCache() {
+	coreMu.Lock()
+	corePath, corePathErr, coreVer = "", nil, ""
+	coreMu.Unlock()
+}
+
+func coreDir() string { return filepath.Join(dataDir(), "core") }
+
+type activeCore struct {
+	Path    string `json:"path"`
+	Version string `json:"version"`
+}
+
+func readActive() *activeCore {
+	b, err := os.ReadFile(filepath.Join(coreDir(), "active.json"))
+	if err != nil {
+		return nil
+	}
+	var a activeCore
+	if json.Unmarshal(b, &a) != nil || a.Path == "" {
+		return nil
+	}
+	if st, err := os.Stat(a.Path); err != nil || st.IsDir() {
+		return nil
+	}
+	return &a
+}
+
 func resolveCore() (string, error) {
-	if len(embeddedCore) > 0 {
-		sum := sha256.Sum256(embeddedCore)
-		dir := filepath.Join(dataDir(), "core")
-		p := filepath.Join(dir, exeName(coreName+"-"+hex.EncodeToString(sum[:4])))
-		if st, err := os.Stat(p); err == nil && st.Size() > 0 {
-			return p, nil
+	embedded, embErr := extractEmbedded()
+	if a := readActive(); a != nil {
+		// скачанное ядро используется, только если оно не старше встроенного
+		if embedded == "" || compareVersions(a.Version, bundledXray) >= 0 {
+			return a.Path, nil
 		}
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return "", err
-		}
-		zr, err := gzip.NewReader(bytes.NewReader(embeddedCore))
-		if err != nil {
-			return "", fmt.Errorf("встроенное ядро повреждено: %v", err)
-		}
-		tmp := p + ".tmp"
-		f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
-		if err != nil {
-			return "", err
-		}
-		if _, err := io.Copy(f, zr); err != nil {
-			f.Close()
-			os.Remove(tmp)
-			return "", err
-		}
-		f.Close()
-		if err := os.Rename(tmp, p); err != nil {
-			return "", err
-		}
-		// удаляем старые версии ядра (в том числе sing-box от прошлых версий помощника)
-		for _, pat := range []string{coreName + "-*", "sing-box-*"} {
-			old, _ := filepath.Glob(filepath.Join(dir, pat))
-			for _, o := range old {
-				if o != p {
-					os.Remove(o)
-				}
-			}
-		}
-		return p, nil
+	}
+	if embedded != "" {
+		return embedded, nil
+	}
+	if embErr != nil {
+		return "", embErr
 	}
 	var cands []string
 	if exe, err := os.Executable(); err == nil {
 		cands = append(cands, filepath.Join(filepath.Dir(exe), exeName(coreName)))
 	}
-	cands = append(cands, filepath.Join(dataDir(), "core", exeName(coreName)))
+	cands = append(cands, filepath.Join(coreDir(), exeName(coreName)))
 	for _, c := range cands {
 		if st, err := os.Stat(c); err == nil && !st.IsDir() {
 			return c, nil
@@ -109,25 +115,88 @@ func resolveCore() (string, error) {
 	return "", errors.New("ядро Xray не найдено (эта сборка помощника без встроенного ядра)")
 }
 
+// extractEmbedded распаковывает встроенное ядро (один раз на версию помощника).
+func extractEmbedded() (string, error) {
+	if len(embeddedCore) == 0 {
+		return "", nil
+	}
+	sum := sha256.Sum256(embeddedCore)
+	dir := coreDir()
+	p := filepath.Join(dir, exeName(coreName+"-"+hex.EncodeToString(sum[:4])))
+	if st, err := os.Stat(p); err == nil && st.Size() > 0 {
+		return p, nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(embeddedCore))
+	if err != nil {
+		return "", fmt.Errorf("встроенное ядро повреждено: %v", err)
+	}
+	if err := writeExecutable(p, zr); err != nil {
+		return "", err
+	}
+	// удаляем прежние встроенные ядра (и sing-box от первых версий помощника)
+	for _, pat := range []string{coreName + "-????????" + exeName(""), "sing-box-*"} {
+		old, _ := filepath.Glob(filepath.Join(dir, pat))
+		for _, o := range old {
+			if o != p {
+				os.Remove(o)
+			}
+		}
+	}
+	return p, nil
+}
+
+func writeExecutable(p string, r io.Reader) error {
+	tmp := p + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, r); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, p)
+}
+
+// binaryVersion запускает `xray version` и возвращает номер версии.
+func binaryVersion(p string) (string, error) {
+	cmd := exec.Command(p, "version")
+	hideWindow(cmd)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	// "Xray 26.9.30 (Xray, Penetrates Everything.) ..."
+	f := strings.Fields(strings.SplitN(string(out), "\n", 2)[0])
+	if len(f) < 2 || f[0] != "Xray" {
+		return "", errors.New("это не Xray")
+	}
+	return f[1], nil
+}
+
 func CoreVersion() string {
-	coreVerOnce.Do(func() {
-		p, err := CorePath()
-		if err != nil {
-			return
-		}
-		cmd := exec.Command(p, "version")
-		hideWindow(cmd)
-		out, err := cmd.Output()
-		if err != nil {
-			return
-		}
-		// "Xray 26.9.30 (Xray, Penetrates Everything.) ..."
-		f := strings.Fields(strings.SplitN(string(out), "\n", 2)[0])
-		if len(f) >= 2 {
-			coreVer = f[1]
-		}
-	})
-	return coreVer
+	coreMu.Lock()
+	v := coreVer
+	coreMu.Unlock()
+	if v != "" {
+		return v
+	}
+	p, err := CorePath()
+	if err != nil {
+		return ""
+	}
+	v, _ = binaryVersion(p)
+	coreMu.Lock()
+	coreVer = v
+	coreMu.Unlock()
+	return v
 }
 
 // ---------- конфиг ----------
@@ -237,6 +306,7 @@ type Core struct {
 	layout   coreLayout
 	hash     string
 	stopping bool
+	last     *applyArgs // последний набор серверов — для перезапуска после обновления ядра
 	logs     *ring
 	onExit   func(msg string)
 }
@@ -293,15 +363,41 @@ func freePorts(n int) ([]int, error) {
 
 // Apply запускает (или перезапускает) ядро с заданным набором серверов.
 // Если набор не изменился — только переключает выбранный сервер, без перезапуска.
+type applyArgs struct {
+	servers       []ApplyServer
+	selected      string
+	preferredPort int
+}
+
 func (c *Core) Apply(servers []ApplyServer, selected string, preferredPort int) (CoreStatus, error) {
 	servers = validServers(servers)
+	c.mu.Lock()
+	c.last = &applyArgs{servers, selected, preferredPort}
+	c.mu.Unlock()
+	return c.apply(servers, selected, preferredPort, false)
+}
+
+// Restart перезапускает ядро с последним набором серверов (например, после обновления Xray).
+func (c *Core) Restart() (CoreStatus, error) {
+	c.mu.Lock()
+	last := c.last
+	running := c.cmd != nil
+	sel := c.layout.selected
+	c.mu.Unlock()
+	if last == nil || !running {
+		return c.Status(), nil
+	}
+	return c.apply(last.servers, sel, last.preferredPort, true)
+}
+
+func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, force bool) (CoreStatus, error) {
 	hashBytes, _ := json.Marshal(servers)
 	h := sha256.Sum256(hashBytes)
 	hash := hex.EncodeToString(h[:])
 
 	c.mu.Lock()
 	running := c.cmd != nil
-	same := running && c.hash == hash && (preferredPort <= 0 || preferredPort == c.layout.port)
+	same := !force && running && c.hash == hash && (preferredPort <= 0 || preferredPort == c.layout.port)
 	prevPort := c.layout.port
 	c.mu.Unlock()
 	if same {

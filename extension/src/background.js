@@ -11,7 +11,8 @@ const pending = new Map();
 
 let core = { running: false, port: 0, selected: '' };
 let coreError = '';
-let busy = { refresh: false, ping: false };
+let busy = { refresh: false, ping: false, updates: false, updateCore: false, updateHelper: false };
+let helperRestarting = false; // помощник сам перезапускается после обновления
 
 function isMissingHost(msg) {
   return /not found|не найден/i.test(msg || '');
@@ -86,6 +87,10 @@ let restarts = [];
 
 async function onCoreDown(msg) {
   core = { ...core, running: false };
+  if (helperRestarting) {
+    await applyProxy();
+    return;
+  }
   coreError = 'Соединение прервалось: ' + msg;
   await applyProxy();
   notify();
@@ -221,7 +226,86 @@ async function scheduleRefresh() {
 
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === 'refresh') refreshSubs();
+  if (a.name === 'updates') checkUpdates(true).catch(() => {});
 });
+
+// ---------- обновления помощника и ядра ----------
+
+const UPDATE_PERIOD_MIN = 24 * 60;
+
+async function checkUpdates(auto = false) {
+  if (busy.updates) return (await load()).updates;
+  busy.updates = true;
+  notify();
+  try {
+    if (!(await connect())) throw new Error(hostError || 'Помощник не подключён');
+    const info = await call('checkUpdates', {}, 90000);
+    const updates = { ...info, checkedAt: Date.now() };
+    await save({ updates });
+    const st = await load();
+    if (auto && st.autoCore && info.core?.available) await updateCore().catch(() => {});
+    return (await load()).updates;
+  } finally {
+    busy.updates = false;
+    notify();
+  }
+}
+
+async function updateCore() {
+  if (busy.updateCore) return;
+  busy.updateCore = true;
+  notify();
+  try {
+    if (!(await connect())) throw new Error(hostError || 'Помощник не подключён');
+    const res = await call('updateCore', {}, 11 * 60000);
+    const st = await load();
+    const updates = st.updates ? { ...st.updates } : { core: {}, helper: {} };
+    updates.core = { ...updates.core, current: res.version, available: false, lastResult: res.updated ? `обновлено с ${res.previous} до ${res.version}` : '' };
+    await save({ updates });
+    if (hostInfo) hostInfo = { ...hostInfo, core: res.version };
+    core = (await call('status')).status;
+    return res;
+  } finally {
+    busy.updateCore = false;
+    notify();
+  }
+}
+
+async function updateHelper() {
+  if (busy.updateHelper) return;
+  busy.updateHelper = true;
+  helperRestarting = true;
+  notify();
+  try {
+    if (!(await connect())) throw new Error(hostError || 'Помощник не подключён');
+    const res = await call('updateHelper', {}, 11 * 60000);
+    if (res.updated) {
+      // помощник завершится сам; ждём и подключаемся к новой версии
+      for (let i = 0; i < 20 && port; i++) await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, 300));
+      await connect();
+      await applyCore();
+      const st = await load();
+      if (st.updates?.helper) {
+        await save({ updates: { ...st.updates, helper: { ...st.updates.helper, current: hostInfo?.version, available: false } } });
+      }
+    }
+    return res;
+  } finally {
+    helperRestarting = false;
+    busy.updateHelper = false;
+    notify();
+  }
+}
+
+async function scheduleUpdates() {
+  const a = await chrome.alarms.get('updates');
+  if (!a) await chrome.alarms.create('updates', { periodInMinutes: UPDATE_PERIOD_MIN, delayInMinutes: 5 });
+  const st = await load();
+  if (!st.updates?.checkedAt || Date.now() - st.updates.checkedAt > UPDATE_PERIOD_MIN * 60000) {
+    setTimeout(() => checkUpdates(true).catch(() => {}), 20000);
+  }
+}
 
 // ---------- пинг ----------
 
@@ -247,6 +331,7 @@ let ready = null;
 
 async function init() {
   await scheduleRefresh();
+  await scheduleUpdates();
   const st = await load();
   await applyCore();
   const period = Math.max(15, st.intervalMin) * 60000;
@@ -413,6 +498,26 @@ const handlers = {
     await scheduleRefresh();
     if (patch.port != null && patch.port !== before.port) await applyCore();
     else await applyProxy();
+    return getState();
+  },
+
+  async checkUpdates() {
+    await checkUpdates(false);
+    return getState();
+  },
+
+  async updateCore() {
+    await updateCore();
+    return getState();
+  },
+
+  async updateHelper() {
+    await updateHelper();
+    return getState();
+  },
+
+  async setAutoCore({ on }) {
+    await save({ autoCore: !!on });
     return getState();
   },
 

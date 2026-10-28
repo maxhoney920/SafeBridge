@@ -2,9 +2,19 @@
 
 export const HOST_NAME = 'com.vlessbridge.host';
 
-// Откуда скачивать помощник (релизы на GitHub).
-export const RELEASES_URL = 'https://github.com/maxhoney920/SafeBridge/releases/latest';
-export const DOWNLOAD_BASE = RELEASES_URL + '/download/';
+// Откуда скачивать помощник: ветка downloads репозитория на GitHub (её обновляет CI).
+export const REPO_URL = 'https://github.com/maxhoney920/SafeBridge';
+export const DOWNLOADS_PAGE = REPO_URL + '/tree/downloads';
+export const DOWNLOAD_BASE = REPO_URL + '/raw/downloads/';
+
+// Файл помощника для платформы браузера (chrome.runtime.getPlatformInfo).
+export function helperDownload(p) {
+  const arch = p.arch === 'arm64' || p.arch === 'arm' ? 'arm64' : 'amd64';
+  if (p.os === 'win') return { os: 'windows', name: 'Windows', file: `vlessbridge-windows-${arch}.exe` };
+  if (p.os === 'mac') return { os: 'darwin', name: 'macOS', file: `vlessbridge-macos-${arch}.zip` };
+  if (p.os === 'linux') return { os: 'linux', name: 'Linux', file: `vlessbridge-linux-${arch}` };
+  return null;
+}
 
 export const DEFAULTS = {
   subs: [],            // [{id, url, name, ua, servers, info, updatedAt, error}]
@@ -17,6 +27,8 @@ export const DEFAULTS = {
   pingUrl: 'https://www.gstatic.com/generate_204',
   webrtc: true,        // защищать от утечки IP через WebRTC в режиме «все сайты»
   port: 0,             // предпочтительный локальный порт (0 — любой свободный)
+  autoCore: true,      // обновлять ядро Xray автоматически
+  updates: null,       // результат последней проверки обновлений
 };
 
 export async function load() {
@@ -34,11 +46,16 @@ export function allServers(st) {
   return out;
 }
 
-// Принимает домен, адрес страницы или маску вида *.example.com, возвращает домен в punycode.
+// Принимает домен, адрес страницы, маску *.example.com или доменную зону (.ru, рф),
+// возвращает домен в punycode. Пустая строка — не похоже на адрес сайта.
 export function normalizeDomain(input) {
   let s = String(input || '').trim().toLowerCase();
   if (!s) return '';
   s = s.replace(/^\*\./, '').replace(/^\./, '');
+  if (/^[a-z]{2,24}$/.test(s) || /^xn--[a-z0-9-]+$/.test(s)) return s; // зона: ru, com, xn--p1ai
+  if (/^[^\x00-\x7f]+$/.test(s)) {
+    try { return new URL('http://a.' + s).hostname.slice(2); } catch { return ''; } // зона «рф»
+  }
   try {
     const u = new URL(/^[a-z][a-z0-9+.-]*:\/\//.test(s) ? s : 'http://' + s);
     s = u.hostname;
@@ -48,6 +65,16 @@ export function normalizeDomain(input) {
   s = s.replace(/\.$/, '');
   if (!/^[a-z0-9.-]+$/.test(s) && !/^\[[0-9a-f:]+\]$/.test(s)) return '';
   return s.includes('.') || s.startsWith('[') ? s : '';
+}
+
+// Домен сайта без поддоменов: music.youtube.com → youtube.com, www.bbc.co.uk → bbc.co.uk.
+const SECOND_LEVEL = new Set(['co', 'com', 'net', 'org', 'gov', 'edu', 'ac', 'or', 'ne', 'go', 'msk', 'spb']);
+export function siteDomain(host) {
+  const parts = host.toLowerCase().replace(/\.$/, '').split('.');
+  if (parts.length <= 2 || /^\d+$/.test(parts[parts.length - 1])) return parts.join('.');
+  const n = parts.length;
+  const take = SECOND_LEVEL.has(parts[n - 2]) && parts[n - 1].length === 2 ? 3 : 2;
+  return parts.slice(-take).join('.');
 }
 
 export function domainMatches(host, list) {
@@ -82,8 +109,8 @@ function FindProxyForURL(url, host) {
 }`;
 }
 
-// Готовые наборы доменов для режима «только эти сайты».
-export const PRESETS = [
+// Готовые наборы для списка «Через VPN».
+export const PRESETS_VPN = [
   { name: 'YouTube', domains: ['youtube.com', 'youtu.be', 'googlevideo.com', 'ytimg.com', 'ggpht.com', 'youtube-nocookie.com', 'youtubei.googleapis.com'] },
   { name: 'Instagram', domains: ['instagram.com', 'cdninstagram.com', 'fbcdn.net'] },
   { name: 'Facebook', domains: ['facebook.com', 'fb.com', 'fbcdn.net', 'messenger.com'] },
@@ -94,6 +121,26 @@ export const PRESETS = [
   { name: 'LinkedIn', domains: ['linkedin.com', 'licdn.com'] },
   { name: 'Telegram Web', domains: ['telegram.org', 't.me'] },
 ];
+
+// Готовые наборы для списка «Без VPN».
+export const PRESETS_DIRECT = [
+  { name: 'Все сайты .ru, .рф, .su', domains: ['ru', 'xn--p1ai', 'su'] },
+  { name: 'Госуслуги и налоги', domains: ['gosuslugi.ru', 'nalog.gov.ru', 'mos.ru', 'esia.gosuslugi.ru'] },
+  { name: 'Банки', domains: ['sberbank.ru', 'tbank.ru', 'tinkoff.ru', 'vtb.ru', 'alfabank.ru', 'gazprombank.ru', 'raiffeisen.ru'] },
+  { name: 'Маркетплейсы', domains: ['ozon.ru', 'wildberries.ru', 'wb.ru', 'avito.ru', 'market.yandex.ru'] },
+  { name: 'Яндекс', domains: ['yandex.ru', 'ya.ru', 'yandex.net', 'yastatic.net', 'yandex.com'] },
+  { name: 'VK и Mail.ru', domains: ['vk.com', 'vk.ru', 'userapi.com', 'vkuser.net', 'mail.ru', 'ok.ru'] },
+];
+
+export const PRESETS = PRESETS_VPN;
+
+// Режимы и списки — одни и те же слова в окне расширения и в настройках.
+export const MODES = {
+  all: { label: 'Все сайты', hint: 'Все сайты открываются через VPN.' },
+  include: { label: 'Только список', hint: 'Через VPN открываются только сайты из списка «Через VPN». Остальные — напрямую, как без расширения.' },
+  exclude: { label: 'Исключения', hint: 'Через VPN открываются все сайты, кроме исключений из списка «Без VPN».' },
+};
+export const LIST_NAMES = { include: '«Через VPN»', exclude: '«Без VPN»' };
 
 // ---------- форматирование ----------
 

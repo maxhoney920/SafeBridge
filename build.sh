@@ -15,6 +15,8 @@ cd "$(dirname "$0")"
 XRAY_VERSION="${XRAY_VERSION:-26.9.30}"
 VERSION="${VERSION:-$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' extension/manifest.json | head -1)}"
 EXTENSION_IDS="${EXTENSION_IDS:-mpmmjdhamocialllnfmcpkjealmekhpl}"
+REPO="${REPO:-maxhoney920/SafeBridge}"
+UPDATE_BASE="${UPDATE_BASE:-https://raw.githubusercontent.com/$REPO/downloads/}"
 TARGETS=("$@")
 [ ${#TARGETS[@]} -eq 0 ] && TARGETS=(windows/amd64 windows/arm64 darwin/amd64 darwin/arm64 linux/amd64 linux/arm64)
 
@@ -46,10 +48,32 @@ for t in "${TARGETS[@]}"; do
   suffix=""; [ "$os" = windows ] && suffix=".exe"
   out="$DIST/vlessbridge-$os-$arch$suffix"
   (cd host && CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -tags embedcore -trimpath \
-    -ldflags "-s -w -X main.version=$VERSION -X main.extensionIDs=$EXTENSION_IDS" -o "../$out" .)
+    -ldflags "-s -w -X main.version=$VERSION -X main.extensionIDs=$EXTENSION_IDS -X main.bundledXray=$XRAY_VERSION -X main.updateBase=$UPDATE_BASE" -o "../$out" .)
   echo "  ✓ $out ($(du -h "$out" | cut -f1))"
+  if [ "$os" = darwin ]; then
+    # для кнопки «Скачать»: zip сохраняет право на запуск, двойной клик открывает установку в Терминале
+    tmpd=$(mktemp -d); cp "$out" "$tmpd/vlessbridge"; chmod +x "$tmpd/vlessbridge"
+    (cd "$tmpd" && zip -q "vlessbridge-macos-$arch.zip" vlessbridge)
+    mv "$tmpd/vlessbridge-macos-$arch.zip" "$DIST/"; rm -rf "$tmpd"
+    echo "  ✓ $DIST/vlessbridge-macos-$arch.zip"
+  fi
 done
 rm -f host/core/xray.gz
+
+# latest.json — по нему помощник узнаёт о новой версии и проверяет SHA-256 при обновлении
+python3 - "$DIST" "$VERSION" "$XRAY_VERSION" <<'PY'
+import hashlib, json, os, sys
+dist, ver, xray = sys.argv[1:4]
+files = {}
+for name in sorted(os.listdir(dist)):
+    if not name.startswith("vlessbridge-") or name.endswith(".zip") or name.startswith("vlessbridge-macos"):
+        continue
+    key = name[len("vlessbridge-"):].removesuffix(".exe")  # windows-amd64, darwin-arm64, linux-amd64
+    with open(os.path.join(dist, name), "rb") as f:
+        files[key] = {"name": name, "sha256": hashlib.sha256(f.read()).hexdigest()}
+json.dump({"version": ver, "xray": xray, "files": files}, open(os.path.join(dist, "latest.json"), "w"), indent=2)
+print("✓", os.path.join(dist, "latest.json"), "—", ", ".join(files))
+PY
 
 # архив расширения: внутри одна папка VlessBridge с manifest.json
 rm -rf "$DIST/VlessBridge" "$DIST/vlessbridge-extension-$VERSION.zip"
