@@ -5,7 +5,7 @@ export const HOST_NAME = 'com.vlessbridge.host';
 // Откуда скачивать помощник: ветка downloads репозитория на GitHub (её обновляет CI).
 export const REPO_URL = 'https://github.com/maxhoney920/SafeBridge';
 export const DOWNLOADS_PAGE = REPO_URL + '/tree/downloads';
-export const INSTALL_DOC = REPO_URL + '/blob/main/INSTALL.md';
+export const INSTALL_DOC = REPO_URL + '#установка';
 export const DOWNLOAD_BASE = REPO_URL + '/raw/downloads/';
 
 // Все сборки помощника — для страницы установки.

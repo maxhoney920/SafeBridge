@@ -35,7 +35,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           cd dist
-          cp ../INSTALL.md README.md
+          cp ../README.md README.md
           git init -q -b downloads
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
