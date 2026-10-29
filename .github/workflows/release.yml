@@ -59,6 +59,7 @@ jobs:
         run: |
           cd dist
           cp ../README.md README.md
+          cp -r ../docs docs  # скриншоты для README
           git init -q -b downloads
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
