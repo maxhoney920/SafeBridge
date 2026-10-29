@@ -116,3 +116,5 @@ details.alt .cmd { margin: 6px 0 4px; }
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm);
   padding: 8px 10px; overflow-wrap: anywhere; user-select: all;
 }
+
+.update.warn { background: var(--bad-soft); color: var(--ink); }

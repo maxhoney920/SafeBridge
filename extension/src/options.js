@@ -1,3 +1,4 @@
+import { MIN_HELPER, versionLess } from './common.js';
 import { el, send, fmtBytes, fmtAgo, fmtDate, PRESETS_VPN, PRESETS_DIRECT, normalizeDomain, plural, MODES, LIST_NAMES, DOWNLOADS_PAGE } from './common.js';
 
 const app = document.getElementById('app');
@@ -213,8 +214,10 @@ function helperSection() {
     ['Ядро', h.core ? `Xray ${h.core}` : (h.coreError || 'не найдено')],
     ['Состояние', state.core.running ? `работает, локальный порт ${state.core.port}` : (state.coreError || 'остановлено')],
   ] : [['Помощник', state.hostError || 'не подключён']];
-  const installLink = !h && el('div', { class: 'row' },
-    el('a', { class: 'btn primary', href: chrome.runtime.getURL('install.html'), target: '_blank', text: 'Установить помощник' }));
+  const outdated = h && versionLess(h.version, MIN_HELPER);
+  const installLink = (!h || outdated) && el('div', { class: 'stack' },
+    outdated && el('div', { class: 'notice', text: `Помощник ${h.version} устарел: он работает на старом ядре, не поддерживает XHTTP и не умеет обновляться сам. Установите новый — он заменит старый, настройки сохранятся.` }),
+    el('div', { class: 'row' }, el('a', { class: 'btn primary', href: chrome.runtime.getURL('install.html'), target: '_blank', text: outdated ? 'Установить новый помощник' : 'Установить помощник' })));
 
   const helperLine = !u.checkedAt ? 'ещё не проверялось'
     : u.helper?.error ? `не удалось проверить: ${u.helper.error}`
@@ -231,7 +234,7 @@ function helperSection() {
     el('div', { class: 'card stack' },
       el('dl', { class: 'kv' }, items.map(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })])),
       installLink,
-      h && el('div', { class: 'updates' },
+      h && !outdated && el('div', { class: 'updates' },
         el('div', { class: 'upd-row' },
           el('div', {}, el('b', { text: 'Помощник' }), el('div', { class: 'muted small', text: helperLine })),
           u.helper?.available && el('button', { class: 'btn primary', disabled: state.busy.updateHelper || busy.updateHelper,

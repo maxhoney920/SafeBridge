@@ -1,3 +1,4 @@
+import { MIN_HELPER, versionLess } from './common.js';
 import { HOST_NAME, DEFAULTS, load, save, allServers, buildPac, normalizeDomain } from './common.js';
 
 // ---------- связь с помощником ----------
@@ -43,6 +44,7 @@ function connect() {
     call('hello', {}, 30000)
       .then((info) => {
         hostInfo = info;
+        onHostVersion(info);
         hostError = '';
         core = info.status || core;
         resolve(true);
@@ -102,6 +104,17 @@ async function onCoreDown(msg) {
     restarts.push(now);
     setTimeout(() => { if (!core.running) applyCore(); }, 1500 * restarts.length);
   }
+}
+
+// Серверы разбирает помощник. Если он сменился (обновление или переустановка),
+// подписки перечитываются, чтобы новые возможности (например, XHTTP) сразу появились.
+async function onHostVersion(info) {
+  const key = `${info.version}/${info.core}`;
+  const { hostKey } = await chrome.storage.local.get('hostKey');
+  if (hostKey === key) return;
+  await chrome.storage.local.set({ hostKey: key });
+  const st = await load();
+  if (st.subs.length) setTimeout(() => refreshSubs().catch(() => {}), 500);
 }
 
 // ---------- ядро и прокси ----------
@@ -235,6 +248,7 @@ const UPDATE_PERIOD_MIN = 24 * 60;
 
 async function checkUpdates(auto = false) {
   if (busy.updates) return (await load()).updates;
+  if (hostInfo && versionLess(hostInfo.version, MIN_HELPER)) return (await load()).updates; // старый помощник не умеет
   busy.updates = true;
   notify();
   try {
@@ -377,6 +391,16 @@ const handlers = {
 
   async retryHost() {
     hostError = '';
+    // переподключаемся заново: после переустановки браузер запустит уже новый файл помощника
+    if (port) {
+      const old = port;
+      port = null;
+      hostInfo = null;
+      for (const p of pending.values()) p.reject(new Error('Переподключение'));
+      pending.clear();
+      try { old.disconnect(); } catch {}
+      await new Promise((r) => setTimeout(r, 600));
+    }
     await connect();
     await applyCore();
     return getState();

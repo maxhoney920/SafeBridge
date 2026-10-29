@@ -208,7 +208,7 @@ func streamFromQuery(pq q) streamParams {
 // buildStream собирает streamSettings Xray. Возвращает (настройки, имя транспорта для показа, ошибку «не поддерживается»).
 func buildStream(p streamParams, host string) (map[string]any, string, error) {
 	ss := map[string]any{}
-	network := strings.ToLower(p.network)
+	network := strings.ToLower(strings.TrimSpace(p.network))
 	name := network
 	switch network {
 	case "", "tcp", "raw":

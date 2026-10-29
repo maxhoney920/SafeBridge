@@ -1,4 +1,4 @@
-import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, installSteps, MODES, LIST_NAMES } from './common.js';
+import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, installSteps, MIN_HELPER, versionLess, MODES, LIST_NAMES } from './common.js';
 
 const app = document.getElementById('app');
 let state = null;
@@ -165,6 +165,11 @@ function siteRow() {
 }
 
 function updateBanner() {
+  if (state.host && versionLess(state.host.version, MIN_HELPER)) {
+    return el('div', { class: 'update warn' },
+      el('span', { text: `Помощник ${state.host.version} устарел: он не умеет XHTTP и обновляться сам. Установите новый — старый заменится.` }),
+      el('button', { class: 'btn quiet', onclick: () => openPage('install.html') }, 'Установить'));
+  }
   const h = state.updates?.helper;
   if (!h?.available) return null;
   const busy = state.busy.updateHelper || pendingAction === 'updateHelper';

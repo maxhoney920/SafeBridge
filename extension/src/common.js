@@ -21,6 +21,18 @@ export const HELPER_FILES = [
     { arch: 'arm64', label: 'ARM64 (aarch64)', file: 'vlessbridge-linux-arm64' }] },
 ];
 
+// Помощник старше этой версии (первые сборки на sing-box) не умеет XHTTP и обновления.
+export const MIN_HELPER = '0.3.0';
+
+export function versionLess(a, b) {
+  const pa = String(a || '0').replace(/^v/, '').split('.').map((x) => parseInt(x, 10) || 0);
+  const pb = String(b || '0').replace(/^v/, '').split('.').map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) < (pb[i] || 0);
+  }
+  return false;
+}
+
 export const INSTALL_CMD = `curl -fsSL ${DOWNLOAD_BASE}install.sh | sh`;
 
 // Шаги установки для каждой системы.

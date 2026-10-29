@@ -1,3 +1,4 @@
+import { MIN_HELPER, versionLess } from './common.js';
 import { el, send, HELPER_FILES, DOWNLOAD_BASE, INSTALL_CMD, installSteps, helperDownload, INSTALL_DOC } from './common.js';
 
 const app = document.getElementById('app');
@@ -17,6 +18,13 @@ async function check() {
 }
 
 function renderStatus() {
+  if (host && versionLess(host.version, MIN_HELPER)) {
+    statusBox.replaceChildren(el('div', { class: 'status missing' },
+      el('div', {}, el('b', { text: `Установлен старый помощник ${host.version}` }),
+        el('span', { class: 'muted small', text: 'Он не поддерживает XHTTP и не обновляется сам. Установите новый по шагам ниже — он заменит старый, затем нажмите «Проверить».' })),
+      el('button', { class: 'btn', onclick: check, disabled: checking }, checking ? el('span', { class: 'spinner' }) : 'Проверить')));
+    return;
+  }
   if (host) {
     statusBox.replaceChildren(el('div', { class: 'status ok' },
       el('div', {}, el('b', { text: 'Помощник установлен' }),
