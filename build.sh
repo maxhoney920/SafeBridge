@@ -79,5 +79,6 @@ PY
 rm -rf "$DIST/VlessBridge" "$DIST/vlessbridge-extension-$VERSION.zip"
 cp -r extension "$DIST/VlessBridge"
 (cd "$DIST" && zip -qr "vlessbridge-extension-$VERSION.zip" VlessBridge -x '*.DS_Store' && rm -rf VlessBridge)
+cp "$DIST/vlessbridge-extension-$VERSION.zip" "$DIST/vlessbridge-extension.zip"  # постоянная ссылка на последнюю версию
 cp install.sh "$DIST/install.sh"
 echo "✓ $DIST/vlessbridge-extension-$VERSION.zip"

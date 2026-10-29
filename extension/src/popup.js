@@ -1,4 +1,4 @@
-import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, DOWNLOAD_BASE, DOWNLOADS_PAGE, helperDownload, MODES, LIST_NAMES } from './common.js';
+import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, installSteps, MODES, LIST_NAMES } from './common.js';
 
 const app = document.getElementById('app');
 let state = null;
@@ -54,39 +54,14 @@ function viewMissingHost() {
   chrome.runtime.getPlatformInfo().then((p) => {
     const d = helperDownload(p);
     const row = el('div', { class: 'row' });
-    if (d) row.append(el('a', { class: 'btn primary', href: DOWNLOAD_BASE + d.file, download: d.file, text: `Скачать для ${d.name}` }));
-    row.append(el('a', { class: 'btn', href: DOWNLOADS_PAGE, target: '_blank', text: 'Другие системы' }));
+    if (d) row.append(el('a', { class: 'btn primary', href: d.url, download: d.file, text: `Скачать для ${d.name}` }));
+    row.append(el('button', { class: 'btn', onclick: () => openPage('install.html'), text: d ? 'Другие системы' : 'Выбрать систему' }));
     box.append(row);
-    const steps = {
-      windows: [
-        'Откройте скачанный файл.',
-        'Если Windows покажет «Система Windows защитила ваш компьютер», нажмите «Подробнее», затем «Выполнить в любом случае».',
-        'Когда в окне появится «Готово», вернитесь сюда и нажмите «Проверить».',
-      ],
-      darwin: [
-        'Откройте скачанный архив — рядом появится файл vlessbridge.',
-        'Откройте его двойным щелчком. macOS скажет, что не может проверить разработчика: нажмите «Готово», затем в Системных настройках → «Конфиденциальность и безопасность» нажмите «Всё равно открыть».',
-        'Когда в окне Терминала появится «Готово», вернитесь сюда и нажмите «Проверить».',
-      ],
-      linux: [
-        'Откройте терминал в папке загрузок и выполните: chmod +x ' + (d?.file || 'vlessbridge-linux-*') + ' && ./' + (d?.file || 'vlessbridge-linux-*'),
-        'Когда появится «Готово», вернитесь сюда и нажмите «Проверить».',
-      ],
-    }[d?.os] || ['Скачайте помощник для своей системы и запустите его.'];
-    box.append(el('ol', { class: 'small' }, steps.map((t) => el('li', { text: t }))));
-    if (d && d.os !== 'windows') {
-      const cmd = `curl -fsSL ${DOWNLOAD_BASE}install.sh | sh`;
-      const copyBtn = el('button', { class: 'btn quiet', text: 'Скопировать' });
-      copyBtn.addEventListener('click', async () => {
-        await navigator.clipboard.writeText(cmd).catch(() => {});
-        copyBtn.textContent = 'Скопировано';
-      });
-      box.append(el('details', { class: 'alt small' },
-        el('summary', { text: 'Или одной командой в терминале' }),
-        el('code', { class: 'cmd', text: cmd }), copyBtn));
-    }
-    box.append(el('div', {}, el('button', { class: 'btn', onclick: () => act('retryHost', {}, 'retry'), disabled: pendingAction === 'retry' },
-      pendingAction === 'retry' ? el('span', { class: 'spinner' }) : 'Проверить')));
+    if (d) box.append(el('ol', { class: 'small' }, installSteps(d.os, d.file).map((t) => el('li', { text: t }))));
+    box.append(el('div', { class: 'row' },
+      el('button', { class: 'btn', onclick: () => act('retryHost', {}, 'retry'), disabled: pendingAction === 'retry' },
+        pendingAction === 'retry' ? el('span', { class: 'spinner' }) : 'Проверить'),
+      el('button', { class: 'btn quiet', onclick: () => openPage('install.html'), text: 'Подробная инструкция' })));
     if (state.hostError && !state.hostMissing) box.append(el('div', { class: 'notice', text: state.hostError }));
   });
   return box;
@@ -263,6 +238,10 @@ function viewMain() {
   nodes.push(serverList(servers));
   nodes.push(footer());
   return nodes;
+}
+
+function openPage(path) {
+  chrome.tabs.create({ url: chrome.runtime.getURL(path) });
 }
 
 function openOptions(hash) {

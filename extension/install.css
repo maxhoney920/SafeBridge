@@ -1,0 +1,33 @@
+.wrap { max-width: 760px; margin: 0 auto; padding: 40px 24px 80px; }
+.brandrow { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; margin-bottom: 28px; }
+.logo { width: 24px; height: 24px; color: var(--accent); }
+h1 { font-size: 26px; letter-spacing: -.02em; margin: 0 0 6px; }
+.lead { color: var(--muted); margin: 0 0 24px; max-width: 62ch; }
+
+.status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-radius: var(--radius-lg); margin-bottom: 24px; }
+.status.ok { background: var(--accent-soft); }
+.status.missing { background: var(--surface); border: 1px solid var(--line); }
+.status b { display: block; }
+
+.tabs { display: flex; gap: 2px; background: var(--line); border-radius: 10px; padding: 3px; margin-bottom: 16px; }
+.tabs button { flex: 1; border: 0; background: transparent; padding: 7px 8px; border-radius: 8px; cursor: pointer; color: var(--muted); }
+.tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.tabs .yours { font-size: 11.5px; color: var(--accent); margin-left: 4px; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 20px 22px; display: flex; flex-direction: column; gap: 18px; }
+.files { display: flex; flex-direction: column; gap: 8px; }
+.file { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.file.mine { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.file small { display: block; color: var(--muted); font-size: 12px; }
+.panel h2 { font-size: 15px; margin: 0 0 8px; }
+.panel ol { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+.cmd-row { display: flex; gap: 8px; align-items: stretch; }
+.cmd { flex: 1; font: 12.5px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; overflow-wrap: anywhere; user-select: all; }
+.note { font-size: 13px; color: var(--muted); }
+.foot { margin-top: 24px; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+
+@media (max-width: 560px) {
+  .wrap { padding: 20px 16px 60px; }
+  .file { flex-direction: column; align-items: flex-start; }
+  .cmd-row { flex-direction: column; }
+}

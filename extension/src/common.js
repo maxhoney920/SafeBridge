@@ -5,15 +5,55 @@ export const HOST_NAME = 'com.vlessbridge.host';
 // Откуда скачивать помощник: ветка downloads репозитория на GitHub (её обновляет CI).
 export const REPO_URL = 'https://github.com/maxhoney920/SafeBridge';
 export const DOWNLOADS_PAGE = REPO_URL + '/tree/downloads';
+export const INSTALL_DOC = REPO_URL + '/blob/main/INSTALL.md';
 export const DOWNLOAD_BASE = REPO_URL + '/raw/downloads/';
+
+// Все сборки помощника — для страницы установки.
+export const HELPER_FILES = [
+  { os: 'windows', name: 'Windows', variants: [
+    { arch: 'amd64', label: 'Обычный компьютер (Intel / AMD)', file: 'vlessbridge-windows-amd64.exe' },
+    { arch: 'arm64', label: 'ARM (Snapdragon, Surface Pro X)', file: 'vlessbridge-windows-arm64.exe' }] },
+  { os: 'darwin', name: 'macOS', variants: [
+    { arch: 'arm64', label: 'Apple Silicon (M1–M4)', file: 'vlessbridge-macos-arm64.zip' },
+    { arch: 'amd64', label: 'Intel', file: 'vlessbridge-macos-amd64.zip' }] },
+  { os: 'linux', name: 'Linux', variants: [
+    { arch: 'amd64', label: 'x86-64', file: 'vlessbridge-linux-amd64' },
+    { arch: 'arm64', label: 'ARM64 (aarch64)', file: 'vlessbridge-linux-arm64' }] },
+];
+
+export const INSTALL_CMD = `curl -fsSL ${DOWNLOAD_BASE}install.sh | sh`;
+
+// Шаги установки для каждой системы.
+export function installSteps(os, file) {
+  return {
+    windows: [
+      'Откройте скачанный файл.',
+      'Если Windows покажет «Система Windows защитила ваш компьютер», нажмите «Подробнее», затем «Выполнить в любом случае».',
+      'Дождитесь слова «Готово» в окне и нажмите Enter.',
+      'Вернитесь в окно расширения и нажмите «Проверить».',
+    ],
+    darwin: [
+      'Откройте скачанный архив двойным щелчком — рядом появится файл vlessbridge.',
+      'Откройте vlessbridge двойным щелчком. macOS скажет, что не может проверить разработчика, — нажмите «Готово».',
+      'Откройте Системные настройки → «Конфиденциальность и безопасность», внизу нажмите «Всё равно открыть» и подтвердите паролем.',
+      'Дождитесь слова «Готово» в окне Терминала, вернитесь в окно расширения и нажмите «Проверить».',
+    ],
+    linux: [
+      'Откройте терминал в папке загрузок.',
+      `Выполните: chmod +x ${file || 'vlessbridge-linux-*'} && ./${file || 'vlessbridge-linux-*'}`,
+      'Дождитесь слова «Готово», вернитесь в окно расширения и нажмите «Проверить».',
+    ],
+  }[os] || [];
+}
 
 // Файл помощника для платформы браузера (chrome.runtime.getPlatformInfo).
 export function helperDownload(p) {
   const arch = p.arch === 'arm64' || p.arch === 'arm' ? 'arm64' : 'amd64';
-  if (p.os === 'win') return { os: 'windows', name: 'Windows', file: `vlessbridge-windows-${arch}.exe` };
-  if (p.os === 'mac') return { os: 'darwin', name: 'macOS', file: `vlessbridge-macos-${arch}.zip` };
-  if (p.os === 'linux') return { os: 'linux', name: 'Linux', file: `vlessbridge-linux-${arch}` };
-  return null;
+  const os = { win: 'windows', mac: 'darwin', linux: 'linux' }[p.os];
+  const group = HELPER_FILES.find((g) => g.os === os);
+  if (!group) return null;
+  const v = group.variants.find((x) => x.arch === arch) || group.variants[0];
+  return { os, arch: v.arch, name: group.name, file: v.file, url: DOWNLOAD_BASE + v.file };
 }
 
 export const DEFAULTS = {

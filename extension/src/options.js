@@ -213,6 +213,8 @@ function helperSection() {
     ['Ядро', h.core ? `Xray ${h.core}` : (h.coreError || 'не найдено')],
     ['Состояние', state.core.running ? `работает, локальный порт ${state.core.port}` : (state.coreError || 'остановлено')],
   ] : [['Помощник', state.hostError || 'не подключён']];
+  const installLink = !h && el('div', { class: 'row' },
+    el('a', { class: 'btn primary', href: chrome.runtime.getURL('install.html'), target: '_blank', text: 'Установить помощник' }));
 
   const helperLine = !u.checkedAt ? 'ещё не проверялось'
     : u.helper?.error ? `не удалось проверить: ${u.helper.error}`
@@ -228,6 +230,7 @@ function helperSection() {
     el('p', { class: 'lead', text: 'Помощник — программа на компьютере, которая держит соединение с сервером через ядро Xray. Браузер запускает её сам и останавливает при закрытии. Раз в сутки расширение проверяет обновления на GitHub.' }),
     el('div', { class: 'card stack' },
       el('dl', { class: 'kv' }, items.map(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })])),
+      installLink,
       h && el('div', { class: 'updates' },
         el('div', { class: 'upd-row' },
           el('div', {}, el('b', { text: 'Помощник' }), el('div', { class: 'muted small', text: helperLine })),
@@ -243,7 +246,7 @@ function helperSection() {
           el('button', { class: 'btn', disabled: state.busy.updates || busy.checkUpdates, onclick: () => act('checkUpdates', {}, 'checkUpdates') },
             state.busy.updates || busy.checkUpdates ? spin() : 'Проверить обновления'),
           u.checkedAt && el('span', { class: 'muted small', text: `проверено ${new Date(u.checkedAt).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}` }),
-          el('a', { class: 'small', href: DOWNLOADS_PAGE, target: '_blank', text: 'Все файлы на GitHub' }))),
+          el('a', { class: 'small', href: chrome.runtime.getURL('install.html'), target: '_blank', text: 'Скачать помощник для другой системы' }))),
       ['updateHelper', 'updateCore', 'checkUpdates'].map((k) => errors[k] && el('div', { class: 'notice', text: errors[k] })),
       el('div', { class: 'row' },
         el('button', { class: 'btn', disabled: busy.diag, onclick: async () => {

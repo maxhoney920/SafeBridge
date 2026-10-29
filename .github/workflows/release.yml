@@ -35,20 +35,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           cd dist
-          cat > README.md <<EOF
-          # Файлы VlessBridge
-
-          Собрано из \`main\` (${GITHUB_SHA::7}). Кнопка в расширении скачивает отсюда нужный файл сама.
-
-          | Система | Файл |
-          |---|---|
-          | Windows | \`vlessbridge-windows-amd64.exe\` (ARM: \`-arm64.exe\`) |
-          | macOS | \`vlessbridge-macos-arm64.zip\` (Intel: \`-amd64.zip\`) |
-          | Linux | \`vlessbridge-linux-amd64\` (ARM: \`-arm64\`) |
-          | Расширение | \`vlessbridge-extension-*.zip\` |
-
-          macOS и Linux одной командой: \`curl -fsSL https://github.com/${GITHUB_REPOSITORY}/raw/downloads/install.sh | sh\`
-          EOF
+          cp ../INSTALL.md README.md
           git init -q -b downloads
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
