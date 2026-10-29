@@ -1,3 +1,4 @@
+import { ext, isFirefox } from './compat.js';
 import { MIN_HELPER, versionLess } from './common.js';
 import { el, send, HELPER_FILES, DOWNLOAD_BASE, INSTALL_CMD, installSteps, helperDownload, INSTALL_DOC } from './common.js';
 
@@ -84,7 +85,7 @@ function render() {
 }
 
 (async () => {
-  const p = await chrome.runtime.getPlatformInfo();
+  const p = await ext.runtime.getPlatformInfo();
   const d = helperDownload(p);
   if (d) { mine = { os: d.os, arch: d.arch }; tab = d.os; }
   const hash = location.hash.slice(1);

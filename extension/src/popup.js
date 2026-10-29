@@ -1,3 +1,4 @@
+import { ext, isFirefox } from './compat.js';
 import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, installSteps, MIN_HELPER, versionLess, MODES, LIST_NAMES } from './common.js';
 
 const app = document.getElementById('app');
@@ -7,7 +8,7 @@ let actionError = '';
 let pendingAction = '';
 let wasActive = null;
 
-document.getElementById('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
+document.getElementById('openOptions').addEventListener('click', () => ext.runtime.openOptionsPage());
 
 async function act(type, data = {}, label = type) {
   pendingAction = label;
@@ -31,7 +32,7 @@ async function reload() {
   render();
 }
 
-chrome.runtime.onMessage.addListener((m) => {
+ext.runtime.onMessage.addListener((m) => {
   if (m?.type === 'changed' && !pendingAction) {
     clearTimeout(reload.t);
     reload.t = setTimeout(reload, 80);
@@ -51,7 +52,7 @@ function viewMissingHost() {
     el('h1', { text: 'Установите помощник' }),
     el('p', { text: 'Расширение подключается к серверам через небольшую программу на компьютере. Её нужно установить один раз, права администратора не понадобятся.' }),
   );
-  chrome.runtime.getPlatformInfo().then((p) => {
+  ext.runtime.getPlatformInfo().then((p) => {
     const d = helperDownload(p);
     const row = el('div', { class: 'row' });
     if (d) row.append(el('a', { class: 'btn primary', href: d.url, download: d.file, text: `Скачать для ${d.name}` }));
@@ -246,11 +247,11 @@ function viewMain() {
 }
 
 function openPage(path) {
-  chrome.tabs.create({ url: chrome.runtime.getURL(path) });
+  ext.tabs.create({ url: ext.runtime.getURL(path) });
 }
 
 function openOptions(hash) {
-  chrome.tabs.create({ url: chrome.runtime.getURL('options.html#' + hash) });
+  ext.tabs.create({ url: ext.runtime.getURL('options.html#' + hash) });
 }
 
 function render() {
@@ -270,7 +271,7 @@ function render() {
 
 (async () => {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
     // ?tab=<адрес> — открыть окно расширения для конкретной страницы (удобно для проверки)
     const u = new URL(new URLSearchParams(location.search).get('tab') || tab?.url || '');
     if (u.protocol === 'http:' || u.protocol === 'https:') tabHost = u.hostname;

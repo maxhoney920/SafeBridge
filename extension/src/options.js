@@ -1,3 +1,4 @@
+import { ext, isFirefox } from './compat.js';
 import { MIN_HELPER, versionLess } from './common.js';
 import { el, send, fmtBytes, fmtAgo, fmtDate, PRESETS_VPN, PRESETS_DIRECT, normalizeDomain, plural, MODES, LIST_NAMES, DOWNLOADS_PAGE } from './common.js';
 
@@ -31,7 +32,7 @@ async function reload() {
   render();
 }
 
-chrome.runtime.onMessage.addListener((m) => {
+ext.runtime.onMessage.addListener((m) => {
   if (m?.type === 'changed') {
     clearTimeout(reload.t);
     reload.t = setTimeout(reload, 120);
@@ -217,7 +218,7 @@ function helperSection() {
   const outdated = h && versionLess(h.version, MIN_HELPER);
   const installLink = (!h || outdated) && el('div', { class: 'stack' },
     outdated && el('div', { class: 'notice', text: `Помощник ${h.version} устарел: он работает на старом ядре, не поддерживает XHTTP и не умеет обновляться сам. Установите новый — он заменит старый, настройки сохранятся.` }),
-    el('div', { class: 'row' }, el('a', { class: 'btn primary', href: chrome.runtime.getURL('install.html'), target: '_blank', text: outdated ? 'Установить новый помощник' : 'Установить помощник' })));
+    el('div', { class: 'row' }, el('a', { class: 'btn primary', href: ext.runtime.getURL('install.html'), target: '_blank', text: outdated ? 'Установить новый помощник' : 'Установить помощник' })));
 
   const helperLine = !u.checkedAt ? 'ещё не проверялось'
     : u.helper?.error ? `не удалось проверить: ${u.helper.error}`
@@ -249,7 +250,7 @@ function helperSection() {
           el('button', { class: 'btn', disabled: state.busy.updates || busy.checkUpdates, onclick: () => act('checkUpdates', {}, 'checkUpdates') },
             state.busy.updates || busy.checkUpdates ? spin() : 'Проверить обновления'),
           u.checkedAt && el('span', { class: 'muted small', text: `проверено ${new Date(u.checkedAt).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}` }),
-          el('a', { class: 'small', href: chrome.runtime.getURL('install.html'), target: '_blank', text: 'Скачать помощник для другой системы' }))),
+          el('a', { class: 'small', href: ext.runtime.getURL('install.html'), target: '_blank', text: 'Скачать помощник для другой системы' }))),
       ['updateHelper', 'updateCore', 'checkUpdates'].map((k) => errors[k] && el('div', { class: 'notice', text: errors[k] })),
       el('div', { class: 'row' },
         el('button', { class: 'btn', disabled: busy.diag, onclick: async () => {

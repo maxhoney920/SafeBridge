@@ -78,7 +78,24 @@ PY
 # архив расширения: внутри одна папка VlessBridge с manifest.json
 rm -rf "$DIST/VlessBridge" "$DIST/vlessbridge-extension-$VERSION.zip"
 cp -r extension "$DIST/VlessBridge"
+rm -f "$DIST/VlessBridge/manifest.firefox.json" "$DIST/VlessBridge/background.html"
 (cd "$DIST" && zip -qr "vlessbridge-extension-$VERSION.zip" VlessBridge -x '*.DS_Store' && rm -rf VlessBridge)
 cp "$DIST/vlessbridge-extension-$VERSION.zip" "$DIST/vlessbridge-extension.zip"  # постоянная ссылка на последнюю версию
+
+# расширение для Firefox: тот же код, манифест V2 и фоновая страница; .xpi — это zip с manifest.json в корне
+rm -rf "$DIST/ff" && cp -r extension "$DIST/ff"
+python3 - "$DIST/ff" "$VERSION" <<'PY'
+import json, os, sys
+d, ver = sys.argv[1:3]
+m = json.load(open(os.path.join(d, "manifest.firefox.json")))
+m["version"] = ver
+json.dump(m, open(os.path.join(d, "manifest.json"), "w"), ensure_ascii=False, indent=2)
+os.remove(os.path.join(d, "manifest.firefox.json"))
+PY
+rm -f "$DIST/vlessbridge-firefox-$VERSION.xpi"
+(cd "$DIST/ff" && zip -qr "../vlessbridge-firefox-$VERSION.xpi" . -x '*.DS_Store')
+rm -rf "$DIST/ff"
+cp "$DIST/vlessbridge-firefox-$VERSION.xpi" "$DIST/vlessbridge-firefox.xpi"
+echo "✓ $DIST/vlessbridge-firefox-$VERSION.xpi"
 cp install.sh "$DIST/install.sh"
 echo "✓ $DIST/vlessbridge-extension-$VERSION.zip"

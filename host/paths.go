@@ -15,6 +15,8 @@ const (
 var (
 	version      = "dev"
 	extensionIDs = "mpmmjdhamocialllnfmcpkjealmekhpl"
+	// ID расширения в Firefox (browser_specific_settings.gecko.id)
+	firefoxIDs = "vlessbridge@safebridge"
 )
 
 func homeDir() string {

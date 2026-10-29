@@ -1,7 +1,8 @@
 // VlessBridge — помощник (native messaging host) для браузерного расширения.
 //
 // Запуск без аргументов (двойной клик) — установка для текущего пользователя.
-// Браузер запускает его с аргументом chrome-extension://<id>/ — режим помощника.
+// Браузер запускает его в режиме помощника: Chrome — с аргументом chrome-extension://<id>/,
+// Firefox — с путём к манифесту и ID расширения.
 package main
 
 import (
@@ -15,7 +16,8 @@ import (
 
 func main() {
 	args := os.Args[1:]
-	if len(args) > 0 && strings.HasPrefix(args[0], "chrome-extension://") {
+	if len(args) > 0 && (strings.HasPrefix(args[0], "chrome-extension://") ||
+		(strings.HasSuffix(strings.ToLower(args[0]), ".json") && len(args) >= 2)) {
 		runHost()
 		return
 	}

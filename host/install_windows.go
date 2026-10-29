@@ -15,13 +15,20 @@ var windowsRegKeys = []struct{ name, key string }{
 	{"Яндекс Браузер", `HKCU\Software\Yandex\YandexBrowser\NativeMessagingHosts\` + hostName},
 }
 
-func registerWindows(manifestPath string) ([]string, error) {
+var firefoxRegKey = `HKCU\Software\Mozilla\NativeMessagingHosts\` + hostName
+
+func registerWindows(manifestPath, firefoxManifest string) ([]string, error) {
 	var ok []string
+	ff := exec.Command("reg", "add", firefoxRegKey, "/ve", "/t", "REG_SZ", "/d", firefoxManifest, "/f")
+	hideWindow(ff)
+	if ff.Run() == nil {
+		ok = append(ok, "Firefox")
+	}
 	for _, k := range windowsRegKeys {
 		c := exec.Command("reg", "add", k.key, "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f")
 		hideWindow(c)
 		if out, err := c.CombinedOutput(); err != nil {
-			if len(ok) == 0 && k.name == "Google Chrome" {
+			if k.name == "Google Chrome" {
 				return nil, fmt.Errorf("reg add: %v: %s", err, out)
 			}
 			continue
@@ -32,6 +39,9 @@ func registerWindows(manifestPath string) ([]string, error) {
 }
 
 func unregisterWindows() {
+	ff := exec.Command("reg", "delete", firefoxRegKey, "/f")
+	hideWindow(ff)
+	ff.Run()
 	for _, k := range windowsRegKeys {
 		c := exec.Command("reg", "delete", k.key, "/f")
 		hideWindow(c)

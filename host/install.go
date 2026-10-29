@@ -72,6 +72,41 @@ func manifestJSON(exePath string, extra []string) []byte {
 	return b
 }
 
+// firefoxTargets — каталоги манифестов Firefox (и форков) на macOS/Linux.
+func firefoxTargets() []browserTarget {
+	h := homeDir()
+	if runtime.GOOS == "darwin" {
+		base := filepath.Join(h, "Library", "Application Support")
+		return []browserTarget{
+			{"Firefox", filepath.Join(base, "Mozilla", "NativeMessagingHosts"), true},
+			{"LibreWolf", filepath.Join(base, "LibreWolf", "NativeMessagingHosts"), false},
+		}
+	}
+	return []browserTarget{
+		{"Firefox", filepath.Join(h, ".mozilla", "native-messaging-hosts"), true},
+		{"Firefox (snap)", filepath.Join(h, "snap", "firefox", "common", ".mozilla", "native-messaging-hosts"), false},
+		{"LibreWolf", filepath.Join(h, ".librewolf", "native-messaging-hosts"), false},
+	}
+}
+
+func firefoxManifestJSON(exePath string) []byte {
+	var ids []string
+	for _, id := range strings.Split(firefoxIDs, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	m := map[string]any{
+		"name":               hostName,
+		"description":        "VlessBridge native helper (Xray-core)",
+		"path":               exePath,
+		"type":               "stdio",
+		"allowed_extensions": ids,
+	}
+	b, _ := json.MarshalIndent(m, "", "  ")
+	return b
+}
+
 func copySelf(dst string) error {
 	src, err := os.Executable()
 	if err != nil {
@@ -130,12 +165,17 @@ func runInstall(extraIDs []string) error {
 		fmt.Printf("• Ядро Xray %s: %s\n", v, p)
 	}
 	man := manifestJSON(exe, extraIDs)
+	ffman := firefoxManifestJSON(exe)
 	if runtime.GOOS == "windows" {
 		mp := filepath.Join(dir, hostName+".json")
 		if err := os.WriteFile(mp, man, 0o644); err != nil {
 			return err
 		}
-		registered, err := registerWindows(mp)
+		fp := filepath.Join(dir, hostName+".firefox.json")
+		if err := os.WriteFile(fp, ffman, 0o644); err != nil {
+			return err
+		}
+		registered, err := registerWindows(mp, fp)
 		if err != nil {
 			return err
 		}
@@ -157,9 +197,23 @@ func runInstall(extraIDs []string) error {
 			}
 			done = append(done, b.Name)
 		}
+		for _, b := range firefoxTargets() {
+			if _, err := os.Stat(filepath.Dir(b.Dir)); err != nil && !b.Required {
+				continue
+			}
+			if err := os.MkdirAll(b.Dir, 0o755); err != nil {
+				fmt.Printf("  ! %s: %v\n", b.Name, err)
+				continue
+			}
+			if err := os.WriteFile(filepath.Join(b.Dir, hostName+".json"), ffman, 0o644); err != nil {
+				fmt.Printf("  ! %s: %v\n", b.Name, err)
+				continue
+			}
+			done = append(done, b.Name)
+		}
 		fmt.Println("• Зарегистрирован для:", strings.Join(done, ", "))
 	}
-	fmt.Println("\nГотово! Вернитесь в браузер и нажмите «Проверить снова» в окне расширения.")
+	fmt.Println("\nГотово! Вернитесь в браузер и нажмите «Проверить» в окне расширения.")
 	return nil
 }
 
@@ -170,6 +224,9 @@ func runUninstall() error {
 	} else {
 		for _, b := range browserTargets() {
 			os.Remove(filepath.Join(b.Dir, "NativeMessagingHosts", hostName+".json"))
+		}
+		for _, b := range firefoxTargets() {
+			os.Remove(filepath.Join(b.Dir, hostName+".json"))
 		}
 	}
 	// сам exe на Windows удалить нельзя, пока он запущен — удаляем всё, что получится

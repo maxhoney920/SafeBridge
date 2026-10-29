@@ -15,6 +15,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      HAS_AMO: ${{ secrets.AMO_JWT_ISSUER != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -28,6 +30,27 @@ jobs:
           EXTENSION_IDS: ${{ vars.EXTENSION_IDS || 'mpmmjdhamocialllnfmcpkjealmekhpl' }}
           REPO: ${{ github.repository }}
         run: ./build.sh
+
+      # Подпись дополнения для Firefox на addons.mozilla.org (скрытое, «unlisted»).
+      # Нужны секреты AMO_JWT_ISSUER и AMO_JWT_SECRET. Версию можно подписать только один раз,
+      # поэтому уже подписанный файл этой версии берётся из ветки downloads.
+      - name: Sign Firefox add-on
+        if: github.ref == 'refs/heads/main' && env.HAS_AMO == 'true'
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          V=$(jq -r .version extension/manifest.json)
+          SIGNED="dist/vlessbridge-firefox-$V-signed.xpi"
+          if ! curl -fsSL -o "$SIGNED" "https://github.com/${GITHUB_REPOSITORY}/raw/downloads/vlessbridge-firefox-$V-signed.xpi"; then
+            rm -f "$SIGNED"
+            mkdir -p ffsrc signed
+            (cd ffsrc && unzip -q "../dist/vlessbridge-firefox-$V.xpi")
+            npx --yes web-ext@8 sign --source-dir ffsrc --artifacts-dir signed --channel unlisted \
+              --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET"
+            cp signed/*.xpi "$SIGNED"
+          fi
+          cp "$SIGNED" dist/vlessbridge-firefox.xpi
 
       # Ветка downloads — откуда расширение и помощник скачивают файлы.
       # Хранится одним коммитом, чтобы репозиторий не разрастался от старых бинарников.

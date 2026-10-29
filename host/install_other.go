@@ -2,5 +2,5 @@
 
 package main
 
-func registerWindows(string) ([]string, error) { return nil, nil }
-func unregisterWindows()                       {}
+func registerWindows(string, string) ([]string, error) { return nil, nil }
+func unregisterWindows()                               {}

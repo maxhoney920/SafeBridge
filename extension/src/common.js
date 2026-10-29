@@ -1,3 +1,4 @@
+import { ext } from './compat.js';
 // Общие константы и функции для фона, popup и настроек.
 
 export const HOST_NAME = 'com.vlessbridge.host';
@@ -58,7 +59,7 @@ export function installSteps(os, file) {
   }[os] || [];
 }
 
-// Файл помощника для платформы браузера (chrome.runtime.getPlatformInfo).
+// Файл помощника для платформы браузера (ext.runtime.getPlatformInfo).
 export function helperDownload(p) {
   const arch = p.arch === 'arm64' || p.arch === 'arm' ? 'arm64' : 'amd64';
   const os = { win: 'windows', mac: 'darwin', linux: 'linux' }[p.os];
@@ -84,12 +85,12 @@ export const DEFAULTS = {
 };
 
 export async function load() {
-  const st = await chrome.storage.local.get(Object.keys(DEFAULTS));
+  const st = await ext.storage.local.get(Object.keys(DEFAULTS));
   return { ...DEFAULTS, ...st };
 }
 
 export function save(patch) {
-  return chrome.storage.local.set(patch);
+  return ext.storage.local.set(patch);
 }
 
 export function allServers(st) {
@@ -229,7 +230,7 @@ export function protoLabel(s) {
 }
 
 export function send(type, data = {}) {
-  return chrome.runtime.sendMessage({ type, ...data });
+  return ext.runtime.sendMessage({ type, ...data });
 }
 
 export function el(tag, attrs = {}, ...children) {

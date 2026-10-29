@@ -393,6 +393,10 @@ func UpdateHelper(ctx context.Context, proxyPort int) (map[string]any, error) {
 	if err := os.Rename(tmp, exe); err != nil {
 		return nil, err
 	}
+	// новая версия может знать новые браузеры (например, Firefox) — перерегистрируемся ею
+	reg := exec.Command(exe, "install")
+	hideWindow(reg)
+	reg.Run()
 	return map[string]any{"updated": true, "version": li.Version, "previous": version}, nil
 }
 

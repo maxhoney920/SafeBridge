@@ -1,5 +1,6 @@
+import { ext, isFirefox, action, sessionStore } from './compat.js';
 import { MIN_HELPER, versionLess } from './common.js';
-import { HOST_NAME, DEFAULTS, load, save, allServers, buildPac, normalizeDomain } from './common.js';
+import { HOST_NAME, DEFAULTS, load, save, allServers, buildPac, normalizeDomain, domainMatches } from './common.js';
 
 // ---------- связь с помощником ----------
 
@@ -16,7 +17,7 @@ let busy = { refresh: false, ping: false, updates: false, updateCore: false, upd
 let helperRestarting = false; // помощник сам перезапускается после обновления
 
 function isMissingHost(msg) {
-  return /not found|не найден/i.test(msg || '');
+  return /not found|не найден|No such native application/i.test(msg || '');
 }
 
 function connect() {
@@ -24,7 +25,7 @@ function connect() {
   if (connecting) return connecting;
   connecting = new Promise((resolve) => {
     try {
-      port = chrome.runtime.connectNative(HOST_NAME);
+      port = ext.runtime.connectNative(HOST_NAME);
     } catch (e) {
       port = null;
       hostError = e.message;
@@ -32,8 +33,8 @@ function connect() {
       return;
     }
     port.onMessage.addListener(onHostMessage);
-    port.onDisconnect.addListener(() => {
-      const msg = chrome.runtime.lastError?.message || 'Помощник завершил работу';
+    port.onDisconnect.addListener((p) => {
+      const msg = p?.error?.message || ext.runtime.lastError?.message || 'Помощник завершил работу';
       port = null;
       hostInfo = null;
       hostError = msg;
@@ -110,9 +111,9 @@ async function onCoreDown(msg) {
 // подписки перечитываются, чтобы новые возможности (например, XHTTP) сразу появились.
 async function onHostVersion(info) {
   const key = `${info.version}/${info.core}`;
-  const { hostKey } = await chrome.storage.local.get('hostKey');
+  const { hostKey } = await ext.storage.local.get('hostKey');
   if (hostKey === key) return;
-  await chrome.storage.local.set({ hostKey: key });
+  await ext.storage.local.set({ hostKey: key });
   const st = await load();
   if (st.subs.length) setTimeout(() => refreshSubs().catch(() => {}), 500);
 }
@@ -152,23 +153,52 @@ async function applyCore() {
   await applyProxy();
 }
 
+// Firefox не умеет PAC из строки так, как Chrome, зато даёт решать по каждому запросу.
+let ffRule = null; // { port, mode, list } — пока прокси включён
+
+function isLocalHost(h) {
+  return !h.includes('.') || h === 'localhost' || h === '[::1]' || h.endsWith('.local') ||
+    /^(127|10)\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h) || /^169\.254\./.test(h);
+}
+
+if (isFirefox) {
+  ext.proxy.onRequest.addListener((info) => {
+    const r = ffRule;
+    if (!r) return { type: 'direct' };
+    let host;
+    try { host = new URL(info.url).hostname.toLowerCase(); } catch { return { type: 'direct' }; }
+    if (isLocalHost(host)) return { type: 'direct' };
+    const listed = !!domainMatches(host, r.list);
+    const via = r.mode === 'include' ? listed : r.mode === 'exclude' ? !listed : true;
+    return via ? { type: 'socks', host: '127.0.0.1', port: r.port, proxyDNS: true } : { type: 'direct' };
+  }, { urls: ['<all_urls>'] });
+  ext.proxy.onError.addListener((e) => console.warn('proxy:', e?.message || e));
+}
+
 async function applyProxy() {
   const st = await load();
   const active = st.enabled && core.running && core.port > 0;
   try {
-    if (active) {
-      await chrome.proxy.settings.set({
+    if (isFirefox) {
+      ffRule = active ? { port: core.port, mode: st.mode, list: st.mode === 'include' ? st.include : st.mode === 'exclude' ? st.exclude : [] } : null;
+      if (active && st.webrtc && st.mode === 'all') {
+        await ext.privacy.network.webRTCIPHandlingPolicy.set({ value: 'disable_non_proxied_udp' });
+      } else {
+        await ext.privacy.network.webRTCIPHandlingPolicy.clear({});
+      }
+    } else if (active) {
+      await ext.proxy.settings.set({
         value: { mode: 'pac_script', pacScript: { data: buildPac(st, core.port, core.selected) } },
         scope: 'regular',
       });
       if (st.webrtc && st.mode === 'all') {
-        await chrome.privacy.network.webRTCIPHandlingPolicy.set({ value: 'disable_non_proxied_udp' });
+        await ext.privacy.network.webRTCIPHandlingPolicy.set({ value: 'disable_non_proxied_udp' });
       } else {
-        await chrome.privacy.network.webRTCIPHandlingPolicy.clear({});
+        await ext.privacy.network.webRTCIPHandlingPolicy.clear({});
       }
     } else {
-      await chrome.proxy.settings.clear({ scope: 'regular' });
-      await chrome.privacy.network.webRTCIPHandlingPolicy.clear({});
+      await ext.proxy.settings.clear({ scope: 'regular' });
+      await ext.privacy.network.webRTCIPHandlingPolicy.clear({});
     }
   } catch (e) {
     console.warn('proxy settings:', e);
@@ -179,21 +209,21 @@ async function applyProxy() {
 
 async function updateBadge(st, active) {
   const problem = st.enabled && !active;
-  await chrome.action.setIcon({
+  await action.setIcon({
     path: active
       ? { 16: '/icons/on-16.png', 32: '/icons/on-32.png' }
       : { 16: '/icons/off-16.png', 32: '/icons/off-32.png' },
   });
-  await chrome.action.setBadgeText({ text: problem ? '!' : '' });
-  if (problem) await chrome.action.setBadgeBackgroundColor({ color: '#C23B3B' });
+  await action.setBadgeText({ text: problem ? '!' : '' });
+  if (problem) await action.setBadgeBackgroundColor({ color: '#C23B3B' });
   const sel = allServers(st).find((s) => s.id === core.selected);
-  await chrome.action.setTitle({
+  await action.setTitle({
     title: active ? `VlessBridge: подключено${sel ? ' — ' + sel.name : ''}` : problem ? 'VlessBridge: нет соединения' : 'VlessBridge: выключено',
   });
 }
 
 function notify() {
-  chrome.runtime.sendMessage({ type: 'changed' }).catch(() => {});
+  ext.runtime.sendMessage({ type: 'changed' }).catch(() => {});
 }
 
 // ---------- подписки ----------
@@ -230,14 +260,14 @@ async function refreshSubs(onlyId) {
 async function scheduleRefresh() {
   const st = await load();
   const period = Math.max(15, st.intervalMin || DEFAULTS.intervalMin);
-  const a = await chrome.alarms.get('refresh');
+  const a = await ext.alarms.get('refresh');
   if (!a || a.periodInMinutes !== period) {
-    await chrome.alarms.create('refresh', { periodInMinutes: period, delayInMinutes: period });
+    await ext.alarms.create('refresh', { periodInMinutes: period, delayInMinutes: period });
   }
   return period;
 }
 
-chrome.alarms.onAlarm.addListener((a) => {
+ext.alarms.onAlarm.addListener((a) => {
   if (a.name === 'refresh') refreshSubs();
   if (a.name === 'updates') checkUpdates(true).catch(() => {});
 });
@@ -313,8 +343,8 @@ async function updateHelper() {
 }
 
 async function scheduleUpdates() {
-  const a = await chrome.alarms.get('updates');
-  if (!a) await chrome.alarms.create('updates', { periodInMinutes: UPDATE_PERIOD_MIN, delayInMinutes: 5 });
+  const a = await ext.alarms.get('updates');
+  if (!a) await ext.alarms.create('updates', { periodInMinutes: UPDATE_PERIOD_MIN, delayInMinutes: 5 });
   const st = await load();
   if (!st.updates?.checkedAt || Date.now() - st.updates.checkedAt > UPDATE_PERIOD_MIN * 60000) {
     setTimeout(() => checkUpdates(true).catch(() => {}), 20000);
@@ -332,7 +362,7 @@ async function pingAll() {
     const st = await load();
     const ids = allServers(st).filter((s) => s.outbound).map((s) => s.id);
     const res = await call('ping', { ids, url: st.pingUrl, timeoutMs: 5000 }, 120000);
-    await chrome.storage.session.set({ pings: res, pingedAt: Date.now() });
+    await sessionStore.set({ pings: res, pingedAt: Date.now() });
   } finally {
     busy.ping = false;
     notify();
@@ -352,9 +382,9 @@ async function init() {
   if (st.subs.some((s) => !s.updatedAt || Date.now() - s.updatedAt > period)) refreshSubs();
 }
 
-chrome.runtime.onStartup.addListener(() => {});
-chrome.runtime.onInstalled.addListener(({ reason }) => {
-  if (reason === 'install') chrome.runtime.openOptionsPage?.();
+ext.runtime.onStartup.addListener(() => {});
+ext.runtime.onInstalled.addListener(({ reason }) => {
+  if (reason === 'install') ext.runtime.openOptionsPage?.();
 });
 ready = init().catch((e) => console.warn('init:', e));
 
@@ -362,11 +392,13 @@ ready = init().catch((e) => console.warn('init:', e));
 
 async function getState() {
   const st = await load();
-  const { pings = {}, pingedAt = 0 } = await chrome.storage.session.get(['pings', 'pingedAt']);
+  const { pings = {}, pingedAt = 0 } = await sessionStore.get(['pings', 'pingedAt']);
   let control = 'controllable_by_this_extension';
-  try {
-    control = (await chrome.proxy.settings.get({})).levelOfControl;
-  } catch {}
+  if (!isFirefox) {
+    try {
+      control = (await ext.proxy.settings.get({})).levelOfControl;
+    } catch {}
+  }
   return {
     ...st,
     host: hostInfo,
@@ -551,7 +583,7 @@ const handlers = {
   },
 };
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+ext.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const h = handlers[msg?.type];
   if (!h) return false;
   h(msg)
