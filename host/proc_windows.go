@@ -118,3 +118,19 @@ func killStaleCore(pidFile string) {
 		p.Kill()
 	}
 }
+
+// scheduleDelete удаляет каталог через пару секунд, когда помощник уже завершится.
+func scheduleDelete(dir string) error {
+	script := `ping 127.0.0.1 -n 4 >nul & rmdir /s /q "` + dir + `"`
+	start := func(flags uint32) error {
+		c := exec.Command("cmd", "/c", script)
+		c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: flags}
+		return c.Start()
+	}
+	const detached, breakaway = 0x00000008, 0x01000000
+	// браузер держит помощник в своём Job Object — пробуем вырваться из него, иначе запускаем как есть
+	if err := start(createNoWindow | detached | breakaway); err == nil {
+		return nil
+	}
+	return start(createNoWindow | detached)
+}

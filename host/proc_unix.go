@@ -42,3 +42,6 @@ func killStaleCore(pidFile string) {
 	}
 	syscall.Kill(pid, syscall.SIGTERM)
 }
+
+// scheduleDelete на macOS/Linux не нужен: запущенный файл можно удалить сразу.
+func scheduleDelete(dir string) error { return os.RemoveAll(dir) }

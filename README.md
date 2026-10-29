@@ -127,11 +127,17 @@ chmod +x vlessbridge-linux-amd64
 
 ## Удаление
 
-1. Удалите расширение: в Chrome — на странице `chrome://extensions`, в Firefox — в `about:addons`.
-2. Удалите помощник:
+**Кнопкой.** Откройте настройки расширения → «Обновления» → «Удалить помощник с компьютера». Помощник остановится, снимет регистрацию во всех браузерах и удалит свою папку. После этого там же появится кнопка «Удалить и расширение».
+
+**Вручную**, если расширения уже нет:
+
+1. Удалите помощник командой:
    - Windows (Win+R → `cmd`): `"%LOCALAPPDATA%\VlessBridge\vlessbridge.exe" uninstall`
-   - macOS: `~/Library/Application\ Support/VlessBridge/vlessbridge uninstall`
+   - macOS (Терминал): `~/Library/Application\ Support/VlessBridge/vlessbridge uninstall`
    - Linux: `~/.local/share/vlessbridge/vlessbridge uninstall`
+2. Удалите расширение: в Chrome — на странице `chrome://extensions`, в Firefox — в `about:addons`.
+
+Если папка помощника осталась (например, команду запустили, когда файла уже не было), её можно просто удалить — пути указаны в таблице «Куда ставится помощник».
 
 ## Если что-то не работает
 

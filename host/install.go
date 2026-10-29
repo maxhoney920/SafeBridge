@@ -217,7 +217,9 @@ func runInstall(extraIDs []string) error {
 	return nil
 }
 
-func runUninstall() error {
+// uninstallAll снимает регистрацию во всех браузерах и удаляет каталог помощника.
+// Запущенный exe на Windows удалить нельзя — его удаляет отложенная команда после выхода.
+func uninstallAll() error {
 	dir := dataDir()
 	if runtime.GOOS == "windows" {
 		unregisterWindows()
@@ -229,12 +231,22 @@ func runUninstall() error {
 			os.Remove(filepath.Join(b.Dir, hostName+".json"))
 		}
 	}
-	// сам exe на Windows удалить нельзя, пока он запущен — удаляем всё, что получится
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
 		os.RemoveAll(filepath.Join(dir, e.Name()))
 	}
 	os.Remove(dir)
+	if _, err := os.Stat(dir); err == nil {
+		return scheduleDelete(dir)
+	}
+	return nil
+}
+
+func runUninstall() error {
+	if err := uninstallAll(); err != nil {
+		fmt.Println("Не всё удалось удалить:", err)
+		return err
+	}
 	fmt.Println("Помощник VlessBridge удалён. Расширение удалите в настройках браузера.")
 	return nil
 }

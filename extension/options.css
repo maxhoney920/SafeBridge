@@ -76,3 +76,4 @@ pre.log { margin: 12px 0 0; max-height: 300px; overflow: auto; background: var(-
 .rules code { font: 12.5px ui-monospace, Menlo, Consolas, monospace; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 .updates { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
 .upd-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.danger-zone { margin-top: 16px; }

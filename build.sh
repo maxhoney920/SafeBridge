@@ -66,7 +66,7 @@ import hashlib, json, os, sys
 dist, ver, xray = sys.argv[1:4]
 files = {}
 for name in sorted(os.listdir(dist)):
-    if not name.startswith("vlessbridge-") or name.endswith(".zip") or name.startswith("vlessbridge-macos"):
+    if not name.startswith("vlessbridge-") or name.endswith((".zip", ".xpi")) or name.startswith("vlessbridge-macos"):
         continue
     key = name[len("vlessbridge-"):].removesuffix(".exe")  # windows-amd64, darwin-arm64, linux-amd64
     with open(os.path.join(dist, name), "rb") as f:

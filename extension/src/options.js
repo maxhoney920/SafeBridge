@@ -214,7 +214,7 @@ function helperSection() {
     ['Помощник', `${h.version} (${h.os}/${h.arch})`],
     ['Ядро', h.core ? `Xray ${h.core}` : (h.coreError || 'не найдено')],
     ['Состояние', state.core.running ? `работает, локальный порт ${state.core.port}` : (state.coreError || 'остановлено')],
-  ] : [['Помощник', state.hostError || 'не подключён']];
+  ] : [['Помощник', state.hostMissing ? 'не установлен' : (state.hostError || 'не подключён')]];
   const outdated = h && versionLess(h.version, MIN_HELPER);
   const installLink = (!h || outdated) && el('div', { class: 'stack' },
     outdated && el('div', { class: 'notice', text: `Помощник ${h.version} устарел: он работает на старом ядре, не поддерживает XHTTP и не умеет обновляться сам. Установите новый — он заменит старый, настройки сохранятся.` }),
@@ -260,7 +260,33 @@ function helperSection() {
         } }, busy.diag ? spin() : 'Показать журнал ядра'),
         el('button', { class: 'btn', onclick: () => act('retryHost', {}, 'retry', 'Помощник переподключён'), disabled: busy.retry }, busy.retry ? spin() : 'Переподключить')),
       errors.diag && el('div', { class: 'notice', text: errors.diag }),
-      logText && el('pre', { class: 'log', text: logText })));
+      logText && el('pre', { class: 'log', text: logText })),
+    removeCard(h));
+}
+
+let helperRemoved = false;
+
+function removeCard(h) {
+  if (helperRemoved && !h) {
+    return el('div', { class: 'card stack danger-zone' },
+      el('b', { text: 'Помощник удалён' }),
+      el('div', { class: 'muted small', text: 'Программа и её регистрация в браузерах удалены с компьютера. Осталось удалить само расширение — или установить помощник заново.' }),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn danger', onclick: () => ext.management.uninstallSelf({ showConfirmDialog: true }).catch(() => {}), text: 'Удалить и расширение' }),
+        el('a', { class: 'btn', href: ext.runtime.getURL('install.html'), target: '_blank', text: 'Установить заново' })));
+  }
+  if (!h) return null;
+  return el('div', { class: 'card stack danger-zone' },
+    el('b', { text: 'Удаление' }),
+    el('div', { class: 'muted small', text: 'Удалит помощник и ядро Xray с компьютера и снимет регистрацию во всех браузерах. Подписки и списки сайтов в расширении останутся.' }),
+    el('div', { class: 'row' },
+      el('button', { class: 'btn danger', disabled: busy.uninstallHelper, onclick: async () => {
+        if (!confirm('Удалить помощник VlessBridge с компьютера? VPN в браузере перестанет работать, пока вы не установите его снова.')) return;
+        const r = await act('uninstallHelper', {}, 'uninstallHelper');
+        if (r) helperRemoved = true;
+        render();
+      } }, busy.uninstallHelper ? spin() : 'Удалить помощник с компьютера')),
+    errors.uninstallHelper && el('div', { class: 'notice', text: errors.uninstallHelper }));
 }
 
 function render() {

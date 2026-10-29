@@ -80,7 +80,7 @@ function render() {
     linux: '~/.local/share/vlessbridge/vlessbridge uninstall',
   }[tab];
   app.replaceChildren(tabs, panel, el('div', { class: 'foot' },
-    el('span', {}, 'Удалить помощник: ', el('code', { text: uninstall }), tab === 'windows' ? ' в командной строке (Win+R → cmd).' : ' в Терминале.'),
+    el('span', {}, 'Удалить помощник проще всего кнопкой в настройках расширения → «Обновления» → «Удалить помощник с компьютера». Вручную: ', el('code', { text: uninstall }), tab === 'windows' ? ' в командной строке (Win+R → cmd).' : ' в Терминале.'),
     el('a', { href: INSTALL_DOC, target: '_blank', text: 'Та же инструкция на GitHub' })));
 }
 

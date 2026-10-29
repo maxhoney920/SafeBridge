@@ -572,6 +572,26 @@ const handlers = {
     return getState();
   },
 
+  async uninstallHelper() {
+    if (!(await connect())) throw new Error(hostError || 'Помощник не подключён');
+    helperRestarting = true; // не перезапускать ядро, когда помощник завершится
+    try {
+      await call('uninstall', {}, 30000);
+      for (let i = 0; i < 20 && port; i++) await new Promise((r) => setTimeout(r, 150));
+    } finally {
+      port = null;
+      hostInfo = null;
+      hostError = 'not found';
+      core = { running: false, port: 0, selected: '' };
+      coreError = '';
+      helperRestarting = false;
+    }
+    await save({ enabled: false, updates: null });
+    await ext.storage.local.remove('hostKey');
+    await applyProxy();
+    return getState();
+  },
+
   async setAutoCore({ on }) {
     await save({ autoCore: !!on });
     return getState();

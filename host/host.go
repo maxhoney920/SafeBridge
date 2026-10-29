@@ -237,6 +237,18 @@ func (h *Host) dispatch(req request) (any, error) {
 		}
 		return res, err
 
+	case "uninstall":
+		h.core.Stop()
+		if err := uninstallAll(); err != nil {
+			return nil, err
+		}
+		go func() {
+			time.Sleep(400 * time.Millisecond)
+			log.Println("помощник удалён пользователем")
+			os.Exit(0)
+		}()
+		return map[string]any{"removed": true, "dataDir": dataDir()}, nil
+
 	case "stop":
 		h.core.Stop()
 		return h.core.Status(), nil
