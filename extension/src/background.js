@@ -163,10 +163,11 @@ function isLocalHost(h) {
 
 if (isFirefox) {
   ext.proxy.onRequest.addListener((info) => {
-    const r = ffRule;
-    if (!r) return { type: 'direct' };
     let host;
     try { host = new URL(info.url).hostname.toLowerCase(); } catch { return { type: 'direct' }; }
+    noteHost(info.tabId, host, info.type === 'main_frame');
+    const r = ffRule;
+    if (!r) return { type: 'direct' };
     if (isLocalHost(host)) return { type: 'direct' };
     const listed = !!domainMatches(host, r.list);
     const via = r.mode === 'include' ? listed : r.mode === 'exclude' ? !listed : true;
@@ -174,6 +175,42 @@ if (isFirefox) {
     return via ? { type: 'socks', host: '127.0.0.1', port: r.port, proxyDNS: true, failoverTimeout: 1 } : { type: 'direct' };
   }, { urls: ['<all_urls>'] });
   ext.proxy.onError.addListener((e) => console.warn('proxy:', e?.message || e));
+}
+
+// Адреса, к которым обращалась каждая вкладка (только Firefox: proxy.onRequest видит все
+// запросы, включая неудачные). В Chrome то же берём из журнала загрузки страницы.
+const tabHosts = new Map();
+function noteHost(tabId, host, reset) {
+  if (tabId == null || tabId < 0) return;
+  let set = tabHosts.get(tabId);
+  if (!set || reset) tabHosts.set(tabId, (set = new Set()));
+  if (set.size < 500) set.add(host);
+}
+ext.tabs.onRemoved?.addListener((id) => tabHosts.delete(id));
+
+// Журнал загрузки страницы: какие адреса она запрашивала (картинки, видео, API).
+function pageResourceHosts() {
+  const hosts = new Set();
+  for (const e of performance.getEntriesByType('resource')) {
+    try { hosts.add(new URL(e.name).hostname); } catch {}
+  }
+  return [...hosts];
+}
+
+async function pageHosts(tabId) {
+  const hosts = new Set(tabHosts.get(tabId) || []);
+  try {
+    let results;
+    if (ext.scripting?.executeScript) {
+      const run = (allFrames) => ext.scripting.executeScript({ target: { tabId, allFrames }, func: pageResourceHosts });
+      // во фреймы чужих сайтов без разрешения не попасть — тогда читаем только саму страницу
+      results = (await run(true).catch(() => run(false))).map((r) => r.result);
+    } else {
+      results = await ext.tabs.executeScript(tabId, { allFrames: true, code: `(${pageResourceHosts})()` });
+    }
+    for (const list of results || []) for (const h of list || []) hosts.add(h);
+  } catch {} // служебные страницы и магазин расширений читать нельзя — это нормально
+  return [...hosts];
 }
 
 // Порт, на котором заведомо никто не слушает: прокси «в никуда» блокирует сайты,
@@ -510,22 +547,29 @@ const handlers = {
     return getState();
   },
 
-  async addSite({ list, domain }) {
-    const d = normalizeDomain(domain);
-    if (!d) throw new Error('Не похоже на адрес сайта');
+  // domain — один сайт, domains — сразу несколько (сайт и всё, что он загружает)
+  async addSite({ list, domain, domains }) {
+    const add = [...new Set([domain, ...(domains || [])].filter(Boolean).map(normalizeDomain).filter(Boolean))];
+    if (!add.length) throw new Error('Не похоже на адрес сайта');
     const st = await load();
     const key = list === 'exclude' ? 'exclude' : 'include';
-    if (!st[key].includes(d)) await save({ [key]: [...st[key], d] });
+    const fresh = add.filter((d) => !st[key].includes(d));
+    if (fresh.length) await save({ [key]: [...st[key], ...fresh] });
     await applyProxy();
     return getState();
   },
 
-  async removeSite({ list, domain }) {
+  async removeSite({ list, domain, domains }) {
     const st = await load();
     const key = list === 'exclude' ? 'exclude' : 'include';
-    await save({ [key]: st[key].filter((x) => x !== domain) });
+    const drop = new Set([domain, ...(domains || [])].filter(Boolean));
+    await save({ [key]: st[key].filter((x) => !drop.has(x)) });
     await applyProxy();
     return getState();
+  },
+
+  async pageHosts({ tabId }) {
+    return tabId == null ? [] : pageHosts(tabId);
   },
 
   async setSites({ list, domains }) {

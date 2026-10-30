@@ -173,15 +173,22 @@ function FindProxyForURL(url, host) {
 
 // Готовые наборы для списка «Через VPN».
 export const PRESETS_VPN = [
-  { name: 'YouTube', domains: ['youtube.com', 'youtu.be', 'googlevideo.com', 'ytimg.com', 'ggpht.com', 'youtube-nocookie.com', 'youtubei.googleapis.com'] },
-  { name: 'Instagram', domains: ['instagram.com', 'cdninstagram.com', 'fbcdn.net'] },
-  { name: 'Facebook', domains: ['facebook.com', 'fb.com', 'fbcdn.net', 'messenger.com'] },
+  { name: 'YouTube', domains: ['youtube.com', 'youtu.be', 'googlevideo.com', 'ytimg.com', 'ggpht.com', 'youtube-nocookie.com', 'youtubei.googleapis.com', 'youtube.googleapis.com', 'jnn-pa.googleapis.com', 'youtubekids.com', 'yt.be'] },
+  { name: 'Instagram', domains: ['instagram.com', 'cdninstagram.com', 'fbcdn.net', 'ig.me'] },
+  { name: 'Facebook', domains: ['facebook.com', 'fb.com', 'fbcdn.net', 'messenger.com', 'facebook.net', 'fbsbx.com'] },
   { name: 'X (Twitter)', domains: ['x.com', 'twitter.com', 'twimg.com', 't.co'] },
-  { name: 'Discord', domains: ['discord.com', 'discord.gg', 'discordapp.com', 'discordapp.net', 'discord.media'] },
-  { name: 'ChatGPT', domains: ['chatgpt.com', 'openai.com', 'oaistatic.com', 'oaiusercontent.com'] },
-  { name: 'Claude', domains: ['claude.ai', 'anthropic.com', 'claudeusercontent.com'] },
+  { name: 'Discord', domains: ['discord.com', 'discord.gg', 'discordapp.com', 'discordapp.net', 'discord.media', 'discordcdn.com'] },
+  { name: 'ChatGPT', domains: ['chatgpt.com', 'openai.com', 'oaistatic.com', 'oaiusercontent.com', 'sora.com'] },
+  { name: 'Claude', domains: ['claude.ai', 'anthropic.com', 'claudeusercontent.com', 'claude.com'] },
+  { name: 'Gemini', domains: ['gemini.google.com', 'aistudio.google.com', 'generativelanguage.googleapis.com', 'notebooklm.google.com'] },
+  { name: 'TikTok', domains: ['tiktok.com', 'tiktokcdn.com', 'tiktokv.com', 'ttwstatic.com', 'byteoversea.com', 'ibytedtos.com', 'tiktokcdn-us.com', 'tiktokcdn-eu.com'] },
+  { name: 'Twitch', domains: ['twitch.tv', 'ttvnw.net', 'jtvnw.net', 'twitchcdn.net', 'twitchsvc.net', 'ext-twitch.tv'] },
+  { name: 'Spotify', domains: ['spotify.com', 'scdn.co', 'spotifycdn.com', 'spotilocal.com', 'pscdn.co'] },
+  { name: 'Netflix', domains: ['netflix.com', 'nflxvideo.net', 'nflximg.net', 'nflxext.com', 'nflxso.net'] },
   { name: 'LinkedIn', domains: ['linkedin.com', 'licdn.com'] },
-  { name: 'Telegram Web', domains: ['telegram.org', 't.me'] },
+  { name: 'Reddit', domains: ['reddit.com', 'redd.it', 'redditmedia.com', 'redditstatic.com'] },
+  { name: 'Medium', domains: ['medium.com', 'miro.medium.com'] },
+  { name: 'Telegram Web', domains: ['telegram.org', 't.me', 'telegram.me', 'telesco.pe'] },
 ];
 
 // Готовые наборы для списка «Без VPN».
@@ -190,11 +197,49 @@ export const PRESETS_DIRECT = [
   { name: 'Госуслуги и налоги', domains: ['gosuslugi.ru', 'nalog.gov.ru', 'mos.ru', 'esia.gosuslugi.ru'] },
   { name: 'Банки', domains: ['sberbank.ru', 'tbank.ru', 'tinkoff.ru', 'vtb.ru', 'alfabank.ru', 'gazprombank.ru', 'raiffeisen.ru'] },
   { name: 'Маркетплейсы', domains: ['ozon.ru', 'wildberries.ru', 'wb.ru', 'avito.ru', 'market.yandex.ru'] },
-  { name: 'Яндекс', domains: ['yandex.ru', 'ya.ru', 'yandex.net', 'yastatic.net', 'yandex.com'] },
-  { name: 'VK и Mail.ru', domains: ['vk.com', 'vk.ru', 'userapi.com', 'vkuser.net', 'mail.ru', 'ok.ru'] },
+  { name: 'Яндекс', service: true, domains: ['yandex.ru', 'ya.ru', 'yandex.net', 'yastatic.net', 'yandex.com'] },
+  { name: 'VK и Mail.ru', service: true, domains: ['vk.com', 'vk.ru', 'userapi.com', 'vkuser.net', 'mail.ru', 'ok.ru'] },
 ];
 
 export const PRESETS = PRESETS_VPN;
+
+// Набор, в который входит сайт. Возвращает набор только для «больших» сайтов,
+// а не для вспомогательных: на ggpht.com набор YouTube не предлагаем, а на youtube.com — да.
+export function presetFor(host, list) {
+  // в «Без VPN» подставляем только наборы одного сервиса, а не «все банки» или зону .ru
+  const sets = list === 'exclude' ? PRESETS_DIRECT.filter((p) => p.service) : PRESETS_VPN;
+  const h = host.toLowerCase();
+  return sets.find((p) => {
+    const m = domainMatches(h, p.domains);
+    return m && p.domains.indexOf(m) < 2; // основной домен набора (первые два)
+  }) || null;
+}
+
+// Домены, которые страница загружает со сторонних адресов (видео, картинки, API).
+// Счётчики и рекламу не предлагаем: им не нужен VPN.
+const NOISE = ['google-analytics.com', 'googletagmanager.com', 'doubleclick.net', 'googlesyndication.com',
+  'googleadservices.com', 'hotjar.com', 'sentry.io', 'cloudflareinsights.com', 'clarity.ms',
+  'scorecardresearch.com', 'criteo.com', 'yandex.ru', 'yandex.net', 'mail.ru'];
+// Общие площадки: на них живут тысячи чужих сайтов, поэтому предлагаем точный адрес,
+// а не всю площадку (иначе google.com увёл бы через VPN весь Google).
+const SHARED = ['google.com', 'googleapis.com', 'gstatic.com', 'amazonaws.com', 'cloudfront.net',
+  'akamaized.net', 'akamaihd.net', 'fastly.net', 'azureedge.net', 'cloudflare.com', 'jsdelivr.net',
+  'githubusercontent.com', 'appspot.com', 'firebaseio.com', 'windows.net'];
+
+export function relatedDomains(hosts, tabHost, list) {
+  const own = siteDomain(tabHost);
+  const out = new Map(); // домен -> сколько адресов
+  for (const raw of hosts) {
+    const h = String(raw).toLowerCase().replace(/\.$/, '');
+    if (!h.includes('.') || /^[\d.]+$/.test(h) || h.includes(':')) continue;
+    if (domainMatches(h, list)) continue; // уже идёт через VPN
+    const base = siteDomain(h);
+    if (base === own || NOISE.includes(base)) continue;
+    const d = SHARED.includes(base) ? h : base;
+    out.set(d, (out.get(d) || 0) + 1);
+  }
+  return [...out.entries()].sort((a, b) => b[1] - a[1]).map(([d]) => d);
+}
 
 // Режимы и списки — одни и те же слова в окне расширения и в настройках.
 export const MODES = {

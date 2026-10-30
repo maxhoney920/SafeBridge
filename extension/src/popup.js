@@ -1,9 +1,11 @@
 import { ext, isFirefox } from './compat.js';
-import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, installSteps, madeBy, MIN_HELPER, versionLess, MODES, LIST_NAMES } from './common.js';
+import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, installSteps, madeBy, MIN_HELPER, versionLess, MODES, LIST_NAMES, presetFor, relatedDomains } from './common.js';
 
 const app = document.getElementById('app');
 let state = null;
 let tabHost = '';
+let tabId = null;
+let pageHostList = []; // адреса, которые загружала открытая страница
 let actionError = '';
 let pendingAction = '';
 let wasActive = null;
@@ -143,26 +145,55 @@ function siteRow() {
   const key = state.mode;
   const match = domainMatches(tabHost, state[key]);
   const viaVpn = key === 'include' ? !!match : !match;
-  const domain = siteDomain(tabHost);
   const list = LIST_NAMES[key];
+  // У больших сервисов видео и картинки лежат на других доменах (у YouTube — googlevideo.com,
+  // ytimg.com), поэтому добавляем и убираем весь набор сервиса, а не один домен.
+  const preset = presetFor(tabHost, key);
+  const addSet = preset ? preset.domains : [siteDomain(tabHost)];
+  const dropSet = preset && preset.domains.includes(match) ? preset.domains : [match];
+  const add = () => act('addSite', { list: key, domains: addSet }, 'site');
+  const drop = () => act('removeSite', { list: key, domains: dropSet }, 'site');
+  const addTitle = preset ? `Добавить ${preset.name} (${addSet.join(', ')}) в список ${list}` : `Добавить ${addSet[0]} в список ${list}`;
+  const dropTitle = `Убрать ${dropSet.join(', ')} из списка ${list}`;
   let reason, btn;
   if (key === 'include') {
-    reason = match ? `в списке: ${match}` : 'нет в списке';
+    reason = match ? `в списке: ${preset && dropSet.length > 1 ? preset.name : match}` : 'нет в списке';
     btn = match
-      ? el('button', { class: 'btn', title: `Убрать ${match} из списка ${list}`, onclick: () => act('removeSite', { list: key, domain: match }, 'site'), text: 'Убрать из списка' })
-      : el('button', { class: 'btn primary', title: `Добавить ${domain} в список ${list}`, onclick: () => act('addSite', { list: key, domain }, 'site'), text: 'Открывать через VPN' });
+      ? el('button', { class: 'btn', title: dropTitle, onclick: drop, text: 'Убрать из списка' })
+      : el('button', { class: 'btn primary', title: addTitle, onclick: add, text: 'Открывать через VPN' });
   } else {
-    reason = match ? `в исключениях: ${match}` : 'нет в исключениях';
+    reason = match ? `в исключениях: ${preset && dropSet.length > 1 ? preset.name : match}` : 'нет в исключениях';
     btn = match
-      ? el('button', { class: 'btn', title: `Убрать ${match} из списка ${list}`, onclick: () => act('removeSite', { list: key, domain: match }, 'site'), text: 'Открывать через VPN' })
-      : el('button', { class: 'btn', title: `Добавить ${domain} в список ${list}`, onclick: () => act('addSite', { list: key, domain }, 'site'), text: 'Открывать без VPN' });
+      ? el('button', { class: 'btn', title: dropTitle, onclick: drop, text: 'Открывать через VPN' })
+      : el('button', { class: 'btn', title: addTitle, onclick: add, text: 'Открывать без VPN' });
   }
-  return el('div', { class: 'site' },
+  return [el('div', { class: 'site' },
     el('div', { class: 'site-text' },
       el('div', { class: 'host', text: tabHost }),
       el('div', { class: 'route small' + (viaVpn ? ' via' : '') },
         el('b', { text: viaVpn ? 'Через VPN' : 'Без VPN' }), ` — ${reason}`)),
-    btn);
+    btn), key === 'include' && match ? relatedRow() : null];
+}
+
+// В режиме «Только список»: сайт идёт через VPN, но его видео, картинки или API
+// грузятся с других доменов — и они пока идут напрямую.
+function relatedRow() {
+  const rel = relatedDomains(pageHostList, tabHost, state.include);
+  if (!rel.length) return null;
+  const shown = rel.slice(0, 5);
+  const rest = rel.length - shown.length;
+  return el('div', { class: 'related' },
+    el('div', { class: 'small' },
+      el('b', { text: `Ещё ${rel.length} ${plural(rel.length, 'сайт', 'сайта', 'сайтов')} мимо VPN. ` }),
+      'Эта страница загружает с них данные — если видео или картинки не открываются, добавьте их:'),
+    el('div', { class: 'related-list small', title: rel.join('\n') },
+      shown.join(', ') + (rest > 0 ? ` и ещё ${rest}` : '')),
+    el('div', { class: 'related-actions' },
+      el('button', { class: 'btn', text: 'Добавить все', onclick: async () => {
+        await act('addSite', { list: 'include', domains: rel }, 'site');
+        if (tabId != null) ext.tabs.reload(tabId).catch(() => {});
+      } }),
+      el('span', { class: 'muted small', text: 'страница обновится сама' })));
 }
 
 function updateBanner() {
@@ -231,8 +262,7 @@ function viewMain() {
   const ub = updateBanner();
   if (ub) nodes.push(ub);
   nodes.push(el('div', { class: 'mode' }, modeSwitch(), modeHint()));
-  const sr = siteRow();
-  if (sr) nodes.push(sr);
+  nodes.push(...[siteRow()].flat().filter(Boolean));
   const busyRefresh = state.busy.refresh || pendingAction === 'refresh';
   const busyPing = state.busy.ping || pendingAction === 'ping';
   nodes.push(el('div', { class: 'section-head' },
@@ -271,10 +301,17 @@ function render() {
 
 (async () => {
   try {
-    const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
+    let [tab] = await ext.tabs.query({ active: true, currentWindow: true });
     // ?tab=<адрес> — открыть окно расширения для конкретной страницы (удобно для проверки)
-    const u = new URL(new URLSearchParams(location.search).get('tab') || tab?.url || '');
+    const forced = new URLSearchParams(location.search).get('tab');
+    if (forced) tab = (await ext.tabs.query({})).find((t) => t.url === forced) || { url: forced };
+    const u = new URL(tab?.url || '');
     if (u.protocol === 'http:' || u.protocol === 'https:') tabHost = u.hostname;
+    tabId = tab?.id ?? null;
   } catch {}
   await reload();
+  if (tabHost && tabId != null) {
+    const r = await send('pageHosts', { tabId }).catch(() => null);
+    if (r?.ok && r.result.length) { pageHostList = r.result; render(); }
+  }
 })();
