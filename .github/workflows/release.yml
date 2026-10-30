@@ -47,8 +47,17 @@ jobs:
             rm -f "$SIGNED"
             mkdir -p ffsrc signed
             (cd ffsrc && unzip -q "../dist/vlessbridge-firefox-$V.xpi")
+            set +e
             npx --yes web-ext@8 sign --source-dir ffsrc --artifacts-dir signed --channel unlisted \
-              --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET"
+              --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET" > sign.log 2>&1
+            rc=$?
+            set -e
+            tail -n 40 sign.log
+            if [ $rc -ne 0 ] || ! ls signed/*.xpi >/dev/null 2>&1; then
+              # причину показываем в аннотациях запуска, чтобы её было видно без скачивания журнала
+              grep -vE '^\s*$' sign.log | tail -n 15 | sed 's/^/::error title=web-ext sign::/'
+              exit 1
+            fi
             cp signed/*.xpi "$SIGNED"
           fi
           cp "$SIGNED" dist/vlessbridge-firefox.xpi
