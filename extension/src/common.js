@@ -34,6 +34,14 @@ export function versionLess(a, b) {
   return false;
 }
 
+export const MADE_BY = { name: 'safe-internet', url: 'https://t.me/serv1897236bot' };
+
+// «Сделано с любовью safe-internet ♥»
+export function madeBy() {
+  const a = el('a', { href: MADE_BY.url, target: '_blank', rel: 'noopener noreferrer', text: MADE_BY.name });
+  return el('div', { class: 'made-by' }, 'Сделано с любовью ', a, ' ', el('span', { class: 'heart', 'aria-hidden': 'true', text: '♥' }));
+}
+
 export const INSTALL_CMD = `curl -fsSL ${DOWNLOAD_BASE}install.sh | sh`;
 
 // Шаги установки для каждой системы.

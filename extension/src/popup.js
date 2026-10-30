@@ -1,5 +1,5 @@
 import { ext, isFirefox } from './compat.js';
-import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, installSteps, MIN_HELPER, versionLess, MODES, LIST_NAMES } from './common.js';
+import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, installSteps, madeBy, MIN_HELPER, versionLess, MODES, LIST_NAMES } from './common.js';
 
 const app = document.getElementById('app');
 let state = null;
@@ -262,7 +262,7 @@ function render() {
   else content = viewMain();
   const focused = document.activeElement?.closest?.('#app') ? document.activeElement : null;
   const keepInput = focused?.tagName === 'INPUT' && focused.type === 'url' ? focused.value : null;
-  app.replaceChildren(...[content].flat());
+  app.replaceChildren(...[content].flat(), madeBy());
   if (keepInput != null) {
     const i = app.querySelector('input[type=url]');
     if (i) { i.value = keepInput; i.focus(); }

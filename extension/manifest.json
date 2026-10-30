@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "VlessBridge",
   "description": "VPN для браузера по VLESS: серверы из ссылки-подписки, выбор сервера и проксирование только нужных сайтов.",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "minimum_chrome_version": "110",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu7+5ynggYMYthVAjISr1YacqUdj+NRzLxtzp8J7WwcWCOdhULC4LPh/ZdKI6RioctKA1YMMTjMIMlkrRSr/Wyd5ETL3Ki13VucnXyxyL2pfWiT/fSnIT2+UwoPjLUhLw6rr5d8HI/2E+VQ2Xp/eXVnatN8oTFbgA+sahWfQ1ASLIeywZI2wltn/1gY6CVQYd/9fOoQtlmVoBFwnTsQkURYLxeLEYXRbowKwckZ5HLrF1xmnFpLhDyh0jIKgO0kRicbke0V//71byrWn5LW5MP5DXZxuvEla1Yy62VFO4vCd5q4RUtwI5IMHihSzc9c9/k8ZJVQtkj9Bl7ZkPJilwAQIDAQAB",
   "permissions": ["proxy", "storage", "alarms", "nativeMessaging", "privacy", "activeTab"],

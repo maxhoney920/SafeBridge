@@ -1,6 +1,6 @@
 import { ext, isFirefox } from './compat.js';
 import { MIN_HELPER, versionLess } from './common.js';
-import { el, send, HELPER_FILES, DOWNLOAD_BASE, INSTALL_CMD, installSteps, helperDownload, INSTALL_DOC } from './common.js';
+import { el, send, HELPER_FILES, DOWNLOAD_BASE, INSTALL_CMD, installSteps, helperDownload, INSTALL_DOC, madeBy } from './common.js';
 
 const app = document.getElementById('app');
 const statusBox = document.getElementById('status');
@@ -81,7 +81,7 @@ function render() {
   }[tab];
   app.replaceChildren(tabs, panel, el('div', { class: 'foot' },
     el('span', {}, 'Удалить помощник проще всего кнопкой в настройках расширения → «Обновления» → «Удалить помощник с компьютера». Вручную: ', el('code', { text: uninstall }), tab === 'windows' ? ' в командной строке (Win+R → cmd).' : ' в Терминале.'),
-    el('a', { href: INSTALL_DOC, target: '_blank', text: 'Та же инструкция на GitHub' })));
+    el('a', { href: INSTALL_DOC, target: '_blank', text: 'Та же инструкция на GitHub' })), madeBy());
 }
 
 (async () => {

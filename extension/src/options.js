@@ -1,6 +1,6 @@
 import { ext, isFirefox } from './compat.js';
 import { MIN_HELPER, versionLess } from './common.js';
-import { el, send, fmtBytes, fmtAgo, fmtDate, PRESETS_VPN, PRESETS_DIRECT, normalizeDomain, plural, MODES, LIST_NAMES, DOWNLOADS_PAGE } from './common.js';
+import { el, send, fmtBytes, fmtAgo, fmtDate, PRESETS_VPN, PRESETS_DIRECT, madeBy, normalizeDomain, plural, MODES, LIST_NAMES, DOWNLOADS_PAGE } from './common.js';
 
 const app = document.getElementById('app');
 let state = null;
@@ -326,6 +326,8 @@ function highlightNav() {
   document.querySelectorAll('.side a').forEach((a) => a.classList.toggle('cur', a.getAttribute('href') === h));
 }
 window.addEventListener('hashchange', highlightNav);
+
+document.querySelector('.side')?.append(madeBy());
 
 (async () => {
   await reload();
