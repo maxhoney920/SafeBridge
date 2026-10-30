@@ -357,12 +357,29 @@ func UpdateHelper(ctx context.Context, proxyPort int) (map[string]any, error) {
 	if !ok || f.Name == "" || f.Sha256 == "" {
 		return nil, errors.New("для этой платформы обновление не опубликовано")
 	}
-	b, err := download(ctx, updateBase+f.Name, 200<<20, proxyPort)
-	if err != nil {
-		return nil, err
+	// параметр в адресе обходит кэш GitHub: сразу после публикации он ещё несколько минут
+	// может отдавать прежний файл, и его хеш не совпадёт со свежим latest.json
+	var b []byte
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(3 * time.Second):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		u := updateBase + f.Name + "?v=" + url.QueryEscape(li.Version) + "&t=" + strconv.FormatInt(time.Now().UnixNano(), 10)
+		b, err = download(ctx, u, 200<<20, proxyPort)
+		if err != nil {
+			return nil, err
+		}
+		if sha256hex(b) == strings.ToLower(f.Sha256) {
+			break
+		}
+		b = nil
 	}
-	if sha256hex(b) != strings.ToLower(f.Sha256) {
-		return nil, errors.New("контрольная сумма не совпала — обновление отменено")
+	if b == nil {
+		return nil, errors.New("контрольная сумма не совпала — обновление отменено. Если версия вышла только что, попробуйте через 5 минут")
 	}
 	exe, err := os.Executable()
 	if err != nil {
