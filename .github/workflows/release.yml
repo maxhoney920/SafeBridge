@@ -37,6 +37,8 @@ jobs:
       # поэтому уже подписанный файл этой версии берётся из ветки downloads.
       - name: Sign Firefox add-on
         if: github.ref == 'refs/heads/main' && env.HAS_AMO == 'true'
+        # если подпись не удалась, остальное всё равно публикуется (с неподписанным .xpi)
+        continue-on-error: true
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
