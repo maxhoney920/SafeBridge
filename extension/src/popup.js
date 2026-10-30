@@ -267,12 +267,39 @@ function updateBanner() {
       busy ? el('span', { class: 'spinner' }) : 'Обновить'));
 }
 
+// Заголовок группы серверов: имя подписки, трафик, срок и время обновления
+function subHeader(sub) {
+  const i = sub.info || {};
+  const parts = [];
+  let meter = null;
+  if (i.total > 0) {
+    const used = (i.upload || 0) + (i.download || 0);
+    parts.push(`${fmtBytes(used)} из ${fmtBytes(i.total)}`);
+    const pct = Math.min(100, (used / i.total) * 100);
+    meter = el('div', { class: 'meter' + (pct >= 90 ? ' full' : '') }, el('i', { style: `width:${pct.toFixed(1)}%` }));
+  } else if (i.upload || i.download) {
+    parts.push(`${fmtBytes((i.upload || 0) + (i.download || 0))}, без лимита`);
+  }
+  const exp = subExpire(sub);
+  const soon = expiringSubs({ subs: [sub] })[0];
+  if (exp > 0) {
+    const d = new Date(exp * 1000);
+    const short = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', ...(d.getFullYear() !== new Date().getFullYear() && { year: 'numeric' }) });
+    parts.push(soon ? fmtLeft(soon.left) : `до ${short}`);
+  }
+  parts.push(fmtAgo(sub.updatedAt));
+  return el('div', { class: 'group' },
+    el('div', { class: 'group-name', text: sub.name }),
+    el('div', { class: 'group-info' + (soon ? ' soon' : ''), text: parts.join(' · ') }),
+    meter,
+    sub.error && el('div', { class: 'err', text: `Не удалось обновить: ${sub.error}` }));
+}
+
 function serverList(servers) {
   const box = el('div', { class: 'servers', role: 'listbox', 'aria-label': 'Серверы' });
-  const multi = state.subs.length > 1;
   const current = state.core.selected || state.selected;
   for (const sub of state.subs) {
-    if (multi) box.append(el('div', { class: 'group', text: sub.name }));
+    box.append(subHeader(sub));
     for (const s of sub.servers || []) {
       const ok = !!s.outbound;
       box.append(el('button', {
@@ -285,24 +312,6 @@ function serverList(servers) {
         el('span', { class: 'proto', text: ok ? protoLabel(s) : (s.unsupported || 'не поддерживается') }),
         pingNode(state.pings[s.id])));
     }
-  }
-  return box;
-}
-
-function footer() {
-  const box = el('div', { class: 'foot' });
-  for (const sub of state.subs) {
-    const i = sub.info || {};
-    const parts = [];
-    if (i.total > 0) {
-      const used = (i.upload || 0) + (i.download || 0);
-      box.append(el('div', { text: `${state.subs.length > 1 ? sub.name + ': ' : ''}${fmtBytes(used)} из ${fmtBytes(i.total)}` }),
-        el('div', { class: 'meter' }, el('i', { style: `width:${Math.min(100, (used / i.total) * 100).toFixed(1)}%` })));
-    } else if (state.subs.length > 1) parts.push(sub.name);
-    if (subExpire(sub) > 0) parts.push(`до ${fmtDate(subExpire(sub))}`);
-    parts.push(fmtAgo(sub.updatedAt));
-    box.append(el('div', { text: parts.join(', ') }));
-    if (sub.error) box.append(el('div', { class: 'err', text: `Не удалось обновить: ${sub.error}` }));
   }
   return box;
 }
@@ -329,7 +338,6 @@ function viewMain() {
     el('button', { class: 'btn quiet', onclick: () => act('refresh', {}, 'refresh'), disabled: busyRefresh, title: 'Обновить подписку сейчас' },
       busyRefresh ? el('span', { class: 'spinner' }) : 'Обновить')));
   nodes.push(serverList(servers));
-  nodes.push(footer());
   return nodes;
 }
 
