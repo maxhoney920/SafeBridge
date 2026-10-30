@@ -92,11 +92,14 @@ cp "$DIST/vlessbridge-extension-$VERSION.zip" "$DIST/vlessbridge-extension.zip" 
 
 # расширение для Firefox: тот же код, манифест V2 и фоновая страница; .xpi — это zip с manifest.json в корне
 rm -rf "$DIST/ff" && cp -r extension "$DIST/ff"
-python3 - "$DIST/ff" "$VERSION" <<'PY'
+# Firefox сам проверяет обновления по update_url (updates.json кладёт CI после подписи)
+FF_UPDATE_URL="${FF_UPDATE_URL:-https://raw.githubusercontent.com/$REPO/downloads/updates.json}"
+python3 - "$DIST/ff" "$VERSION" "$FF_UPDATE_URL" <<'PY'
 import json, os, sys
-d, ver = sys.argv[1:3]
+d, ver, upd = sys.argv[1:4]
 m = json.load(open(os.path.join(d, "manifest.firefox.json")))
 m["version"] = ver
+m["browser_specific_settings"]["gecko"]["update_url"] = upd
 json.dump(m, open(os.path.join(d, "manifest.json"), "w"), ensure_ascii=False, indent=2)
 os.remove(os.path.join(d, "manifest.firefox.json"))
 PY

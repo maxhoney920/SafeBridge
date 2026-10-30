@@ -70,6 +70,13 @@ jobs:
             cp signed/*.xpi "$SIGNED"
           fi
           cp "$SIGNED" dist/vlessbridge-firefox.xpi
+          # updates.json — по нему установленный Firefox сам находит и ставит новую подписанную версию
+          H=$(sha256sum "$SIGNED" | cut -d' ' -f1)
+          jq -n --arg v "$V" --arg h "sha256:$H" \
+            --arg link "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/downloads/vlessbridge-firefox-$V-signed.xpi" \
+            '{addons: {"vlessbridge@safebridge": {updates: [{version: $v, update_link: $link, update_hash: $h,
+              applications: {gecko: {strict_min_version: "115.0"}}}]}}}' > dist/updates.json
+          cat dist/updates.json
 
       # Ветка downloads — откуда расширение и помощник скачивают файлы.
       # Хранится одним коммитом, чтобы репозиторий не разрастался от старых бинарников.
