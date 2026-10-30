@@ -96,7 +96,9 @@ function viewNoSubs() {
     const syncing = state.busy.account || pendingAction === 'accountSync';
     top = el('div', { class: 'account-box' },
       el('p', {}, 'Вы вошли в ', el('b', { text: ACCOUNT.name }), acc.email ? ` как ${acc.email}` : '', '.'),
-      el('p', { class: 'muted', text: acc.error ? `Не удалось получить ключи: ${acc.error}` : 'Активных ключей пока нет. Получите или продлите ключ в боте — он появится здесь сам.' }),
+      el('p', { class: 'muted', text: acc.error ? `Не удалось получить ключи: ${acc.error}`
+        : acc.allKeys?.length ? 'Все ключи аккаунта выключены. Включите нужные в настройках → «Подписки».'
+        : 'Активных ключей пока нет. Получите или продлите ключ в боте — он появится здесь сам.' }),
       el('div', { class: 'row' },
         el('button', { class: 'btn primary', onclick: () => openUrl(acc.renewUrl || ACCOUNT.bot), text: 'Открыть бота' }),
         el('button', { class: 'btn', disabled: syncing, onclick: () => act('accountSync', {}, 'accountSync') }, syncing ? el('span', { class: 'spinner' }) : 'Проверить снова'),

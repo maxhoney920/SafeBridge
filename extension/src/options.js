@@ -75,8 +75,9 @@ function subsSection() {
       el('div', { class: 'actions' },
         el('button', { class: 'btn', disabled: busy['r' + sub.id], onclick: () => act('refresh', { subId: sub.id }, 'r' + sub.id, 'Подписка обновлена') },
           busy['r' + sub.id] ? spin() : 'Обновить'),
+        fromAccount && el('button', { class: 'btn', onclick: () => ext.tabs.create({ url: state.account.renewUrl || ACCOUNT.bot }), text: 'Продлить' }),
         fromAccount
-          ? el('button', { class: 'btn', onclick: () => ext.tabs.create({ url: state.account.renewUrl || ACCOUNT.bot }), text: 'Продлить' })
+          ? el('button', { class: 'btn', title: 'Выключить этот ключ. Включить снова можно в карточке аккаунта выше.', onclick: () => act('removeSub', { id: sub.id }, 'rm', 'Ключ выключен'), text: 'Не использовать' })
           : el('button', { class: 'btn danger', onclick: () => confirm(`Удалить подписку «${sub.name}»?`) && act('removeSub', { id: sub.id }, 'rm', 'Подписка удалена'), text: 'Удалить' })),
       soon && el('div', { class: 'notice', text: `Подписка ${fmtLeft(soon.left)}.` }),
       el('div', { class: 'facts' }, facts),
@@ -110,7 +111,23 @@ function accountCard() {
       el('button', { class: 'btn primary', onclick: () => act('accountLogin', {}, 'login'), text: 'Войти через Google' }));
   }
   const facts = [];
-  if (acc.syncedAt) facts.push(`ключей: ${acc.keys ?? 0}, ${fmtAgo(acc.syncedAt).replace('обновлена', 'проверено')}`);
+  const all = acc.allKeys || [];
+  const off = new Set(acc.off || []);
+  const ref = (k) => (k.id != null ? String(k.id) : k.url);
+  if (acc.syncedAt) facts.push(`${all.length ? `используется ${all.length - off.size} из ${all.length}` : 'ключей нет'}, ${fmtAgo(acc.syncedAt).replace('обновлена', 'проверено')}`);
+  const keyList = all.length > 0 && el('div', { class: 'acc-keys' },
+    el('div', { class: 'small muted', text: 'Какие ключи использовать. Новые ключи из бота включаются сами.' }),
+    all.map((k) => {
+      const r = ref(k);
+      const on = !off.has(r);
+      const box = el('input', { type: 'checkbox', checked: on, disabled: busy['key' + r] });
+      box.addEventListener('change', () => act('accountSetKey', { ref: r, on: box.checked }, 'key' + r));
+      return el('label', { class: 'acc-key' + (on ? '' : ' off') }, box,
+        el('span', { class: 'name', text: k.plan || 'Ключ' }),
+        el('span', { class: 'muted small', text: k.expireAt ? `до ${fmtDate(k.expireAt)}` : 'бессрочно' }),
+        busy['key' + r] && spin(),
+        errors['key' + r] && el('span', { class: 'err small', text: errors['key' + r] }));
+    }));
   return el('div', { class: 'card account' },
     el('div', { class: 'acc-text' },
       el('b', {}, `Аккаунт ${ACCOUNT.name}`, acc.email || acc.name ? `: ${acc.email || acc.name}` : ''),
@@ -124,7 +141,8 @@ function accountCard() {
         : el('button', { class: 'btn', disabled: busy.accountSync || state.busy.account, onclick: () => act('accountSync', {}, 'accountSync', 'Ключи проверены') },
           busy.accountSync || state.busy.account ? spin() : 'Проверить ключи'),
       el('button', { class: 'btn', onclick: () => ext.tabs.create({ url: acc.renewUrl || ACCOUNT.bot }), text: 'Открыть бота' }),
-      el('button', { class: 'btn danger', onclick: () => confirm(`Выйти из аккаунта ${ACCOUNT.name}? Ключи из аккаунта удалятся из расширения, подписки, добавленные вручную, останутся.`) && act('accountLogout', {}, 'logout', 'Вы вышли из аккаунта'), text: 'Выйти' })));
+      el('button', { class: 'btn danger', onclick: () => confirm(`Выйти из аккаунта ${ACCOUNT.name}? Ключи из аккаунта удалятся из расширения, подписки, добавленные вручную, останутся.`) && act('accountLogout', {}, 'logout', 'Вы вышли из аккаунта'), text: 'Выйти' })),
+    keyList);
 }
 
 function fmtInterval(min) {

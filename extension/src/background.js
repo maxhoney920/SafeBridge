@@ -266,8 +266,19 @@ function notify() {
 
 // ---------- подписки ----------
 
+let refreshing = null;
 async function refreshSubs(onlyId) {
-  if (busy.refresh) return;
+  if (busy.refresh) {
+    // полное обновление уже идёт; одну новую подписку загрузим сразу после него
+    if (!onlyId) return refreshing;
+    await refreshing;
+    if (busy.refresh) return refreshing;
+  }
+  refreshing = refreshOnce(onlyId);
+  return refreshing;
+}
+
+async function refreshOnce(onlyId) {
   busy.refresh = true;
   notify();
   try {
@@ -347,6 +358,34 @@ async function accountFetch(st, path, init = {}) {
 
 const isoToSec = (iso) => (iso ? Math.floor(Date.parse(iso) / 1000) || 0 : 0);
 
+// Ключ аккаунта по-разному: id из бота, а если его нет — ссылка
+const keyRef = (k) => (k.id != null ? String(k.id) : k.url);
+
+// Приводит подписки из аккаунта к списку ключей account.allKeys без выключенных
+// пользователем (account.off). Возвращает id добавленных подписок.
+function reconcileAccountSubs(st) {
+  const off = new Set(st.account?.off || []);
+  const wanted = (st.account?.allKeys || []).filter((k) => !off.has(keyRef(k)));
+  const urls = new Set(wanted.map((k) => k.url));
+  // ключи, которых больше нет (истекли, удалены в боте или выключены), убираем
+  const subs = st.subs.filter((s) => !s.account || urls.has(s.url));
+  const added = [];
+  for (const k of wanted) {
+    const fields = { account: true, keyId: k.id, mirror: k.mirror || '', expireAt: k.expireAt || 0, plan: k.plan || '' };
+    const cur = subs.find((s) => s.url === k.url);
+    if (cur) {
+      Object.assign(cur, fields);
+      if (!cur.customName && k.plan) cur.name = `${ACCOUNT.name}: ${k.plan}`;
+    } else {
+      const id = 'sub' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      subs.push({ id, url: k.url, name: `${ACCOUNT.name}${k.plan ? ': ' + k.plan : ''}`, customName: false, servers: [], ...fields });
+      added.push(id);
+    }
+  }
+  const changed = added.length > 0 || subs.length !== st.subs.length;
+  return { subs, added, changed };
+}
+
 // Сверяет подписки из аккаунта с ключами на сайте. true — состав подписок изменился.
 async function syncAccount() {
   let st = await load();
@@ -356,32 +395,16 @@ async function syncAccount() {
   try {
     const data = await accountFetch(st, '/api/ext/keys');
     st = await load(); // за время запроса могли что-то поменять
-    const keys = (data.keys || []).filter((k) => /^https?:\/\//i.test(k.subscription_url || ''));
-    const urls = new Set(keys.map((k) => k.subscription_url));
-    let changed = false;
-    // ключи, которых больше нет (истекли или удалены в боте), убираем
-    const subs = st.subs.filter((s) => {
-      const keep = !s.account || urls.has(s.url);
-      if (!keep) changed = true;
-      return keep;
-    });
-    for (const k of keys) {
-      const fields = { account: true, keyId: k.id, mirror: k.mirror_url || '', expireAt: isoToSec(k.expire_at), plan: k.plan_label || '' };
-      const cur = subs.find((s) => s.url === k.subscription_url);
-      if (cur) {
-        Object.assign(cur, fields);
-        if (!cur.customName && k.plan_label) cur.name = `${ACCOUNT.name}: ${k.plan_label}`;
-      } else {
-        subs.push({ id: 'sub' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), url: k.subscription_url,
-          name: `${ACCOUNT.name}${k.plan_label ? ': ' + k.plan_label : ''}`, customName: false, servers: [], ...fields });
-        changed = true;
-      }
-    }
-    await save({
-      subs,
-      account: { ...st.account, name: data.account?.name || st.account.name || '', email: data.account?.email || st.account.email || '',
-        renewUrl: data.renew_url || ACCOUNT.bot, syncedAt: Date.now(), keys: keys.length, error: '', expired: false },
-    });
+    const allKeys = (data.keys || []).filter((k) => /^https?:\/\//i.test(k.subscription_url || '')).map((k) => ({
+      id: k.id, url: k.subscription_url, mirror: k.mirror_url || '', plan: k.plan_label || '', expireAt: isoToSec(k.expire_at),
+    }));
+    // выключенные ключи, которых больше нет на сайте, забываем
+    const refs = new Set(allKeys.map(keyRef));
+    const off = (st.account.off || []).filter((r) => refs.has(r));
+    const account = { ...st.account, name: data.account?.name || st.account.name || '', email: data.account?.email || st.account.email || '',
+      renewUrl: data.renew_url || ACCOUNT.bot, syncedAt: Date.now(), allKeys, off, keys: allKeys.length - off.length, error: '', expired: false };
+    const { subs, changed } = reconcileAccountSubs({ ...st, account });
+    await save({ subs, account });
     return changed;
   } catch (e) {
     st = await load();
@@ -391,6 +414,20 @@ async function syncAccount() {
     busy.account = false;
     notify();
   }
+}
+
+// Включить или выключить один ключ аккаунта
+async function setAccountKey(ref, on) {
+  const st = await load();
+  if (!st.account) throw new Error('Вы не вошли в аккаунт');
+  const off = new Set(st.account.off || []);
+  if (on) off.delete(ref); else off.add(ref);
+  const account = { ...st.account, off: [...off] };
+  account.keys = (account.allKeys || []).filter((k) => !off.has(keyRef(k))).length;
+  const { subs, added } = reconcileAccountSubs({ ...st, account });
+  await save({ subs, account });
+  if (added.length) for (const id of added) await refreshSubs(id);
+  else await applyCore();
 }
 
 // Плановое обновление: сначала ключи из аккаунта, затем сами подписки.
@@ -637,6 +674,11 @@ const handlers = {
     return getState();
   },
 
+  async accountSetKey({ ref, on }) {
+    await setAccountKey(String(ref), !!on);
+    return getState();
+  },
+
   async accountLogout() {
     const st = await load();
     if (st.account?.token) {
@@ -672,8 +714,12 @@ const handlers = {
 
   async removeSub({ id }) {
     const st = await load();
-    if (st.subs.find((s) => s.id === id)?.account && st.account) {
-      throw new Error(`Это ключ из аккаунта ${ACCOUNT.name}: он исчезнет сам, когда закончится. Чтобы убрать все такие ключи, выйдите из аккаунта.`);
+    const sub = st.subs.find((s) => s.id === id);
+    if (sub?.account && st.account) {
+      // ключ из аккаунта не удаляем, а выключаем — иначе он вернулся бы при следующей сверке
+      const k = (st.account.allKeys || []).find((x) => x.url === sub.url);
+      await setAccountKey(k ? keyRef(k) : sub.url, false);
+      return getState();
     }
     await save({ subs: st.subs.filter((s) => s.id !== id) });
     await applyCore();
