@@ -56,7 +56,7 @@ VPN для браузера по протоколу VLESS. Вы вставляе
 
 #### Firefox
 
-Нужен Firefox 115 или новее. Откройте [vlessbridge-firefox.xpi](https://github.com/maxhoney920/SafeBridge/raw/downloads/vlessbridge-firefox.xpi) в Firefox и нажмите «Добавить». Дополнение подписано Mozilla, ставится насовсем и обновляется вместе с новыми версиями.
+Нужен Firefox 115 или новее. Откройте [vlessbridge-firefox.xpi](https://github.com/maxhoney920/SafeBridge/raw/downloads/vlessbridge-firefox.xpi) в Firefox и нажмите «Добавить». Дополнение подписано Mozilla и ставится насовсем. Чтобы обновить его, откройте эту же ссылку ещё раз.
 
 Firefox из Flatpak помощника не видит: песочница Flatpak не даёт запускать программы снаружи. Используйте Firefox из пакета или с сайта Mozilla (snap-версия в Ubuntu тоже должна работать, но она не проверялась).
 
