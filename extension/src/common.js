@@ -42,6 +42,43 @@ export function madeBy() {
   return el('div', { class: 'made-by' }, 'Сделано с любовью ', a, ' ', el('span', { class: 'heart', 'aria-hidden': 'true', text: '♥' }));
 }
 
+// Аккаунт VPN-сервиса: вход через Google или Telegram, ключи подтягиваются сами.
+// Сайт — личный кабинет бота; бот — где получить ключ и продлить подписку.
+export const ACCOUNT = {
+  name: 'safe-internet',
+  site: 'https://tapp.internet-safe.online',
+  bot: 'https://t.me/serv1897236bot',
+};
+// Предупреждать о конце подписки за столько дней
+export const EXPIRE_WARN_DAYS = 3;
+
+// Чем закончился вход (ответ сайта в #error=…) — понятным языком.
+export const ACCOUNT_ERRORS = {
+  not_linked: 'Этот Google-аккаунт не привязан к боту. Откройте бота, получите ключ и нажмите «🔗 Привязать Google», затем войдите снова.',
+  cancelled: 'Вход отменён.',
+  invalid: 'Вход не удался или устарел. Попробуйте ещё раз.',
+  banned: 'Доступ к аккаунту ограничен администратором.',
+  google_not_configured: 'Вход через Google на сайте пока не настроен. Добавьте подписку вручную — ссылку можно взять в боте.',
+};
+
+// Срок действия подписки в секундах: из аккаунта или из заголовка подписки.
+export const subExpire = (sub) => sub.expireAt || sub.info?.expire || 0;
+
+// Подписки, которые скоро закончатся (или уже закончились), — для предупреждения.
+export function expiringSubs(st, now = Date.now()) {
+  return st.subs.map((s) => ({ sub: s, left: subExpire(s) * 1000 - now }))
+    .filter((x) => x.sub.servers?.length && subExpire(x.sub) > 0 && x.left < EXPIRE_WARN_DAYS * 86400e3)
+    .sort((a, b) => a.left - b.left);
+}
+
+export function fmtLeft(ms) {
+  if (ms <= 0) return 'закончилась';
+  const d = Math.round(ms / 86400e3);
+  if (ms >= 86400e3) return `закончится через ${d} ${plural(d, 'день', 'дня', 'дней')}`;
+  const h = Math.max(1, Math.floor(ms / 3600e3));
+  return `закончится через ${h} ${plural(h, 'час', 'часа', 'часов')}`;
+}
+
 export const INSTALL_CMD = `curl -fsSL ${DOWNLOAD_BASE}install.sh | sh`;
 
 // Шаги установки для каждой системы.
@@ -78,7 +115,7 @@ export function helperDownload(p) {
 }
 
 export const DEFAULTS = {
-  subs: [],            // [{id, url, name, ua, servers, info, updatedAt, error}]
+  subs: [],            // [{id, url, name, ua, servers, info, updatedAt, error, account, mirror, expireAt}]
   selected: '',        // id выбранного сервера
   enabled: false,      // включён ли прокси в браузере
   mode: 'all',         // all | include | exclude
@@ -91,6 +128,9 @@ export const DEFAULTS = {
   port: 0,             // предпочтительный локальный порт (0 — любой свободный)
   autoCore: true,      // обновлять ядро Xray автоматически
   updates: null,       // результат последней проверки обновлений
+  account: null,       // вход в ACCOUNT: {token, email, name, at, syncedAt, keys, renewUrl, expired, error}
+  accountError: '',    // чем закончилась последняя попытка входа (not_linked, cancelled…)
+  accountSite: '',     // другой адрес сайта аккаунта (только для проверки)
 };
 
 export async function load() {

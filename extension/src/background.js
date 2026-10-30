@@ -1,6 +1,6 @@
 import { ext, isFirefox, action, sessionStore } from './compat.js';
 import { MIN_HELPER, versionLess } from './common.js';
-import { HOST_NAME, DEFAULTS, load, save, allServers, buildPac, normalizeDomain, domainMatches } from './common.js';
+import { HOST_NAME, DEFAULTS, load, save, allServers, buildPac, normalizeDomain, domainMatches, ACCOUNT } from './common.js';
 
 // ---------- связь с помощником ----------
 
@@ -13,7 +13,7 @@ const pending = new Map();
 
 let core = { running: false, port: 0, selected: '' };
 let coreError = '';
-let busy = { refresh: false, ping: false, updates: false, updateCore: false, updateHelper: false };
+let busy = { refresh: false, ping: false, updates: false, updateCore: false, updateHelper: false, account: false };
 let helperRestarting = false; // помощник сам перезапускается после обновления
 
 function isMissingHost(msg) {
@@ -276,12 +276,20 @@ async function refreshSubs(onlyId) {
     const subs = st.subs.map((s) => ({ ...s }));
     await Promise.all(subs.filter((s) => !onlyId || s.id === onlyId).map(async (sub) => {
       try {
-        const r = await call('fetch', { url: sub.url, ua: sub.ua || '' }, 90000);
+        let r;
+        try {
+          r = await call('fetch', { url: sub.url, ua: sub.ua || '' }, 90000);
+        } catch (e) {
+          // у ключей из аккаунта бывает запасной домен — на случай, если основной заблокирован
+          if (!sub.mirror) throw e;
+          r = await call('fetch', { url: sub.mirror, ua: sub.ua || '' }, 90000);
+        }
         sub.servers = r.servers;
         sub.info = r.info;
         sub.updatedAt = Date.now();
         sub.error = '';
-        if (!sub.customName && r.info?.title) sub.name = r.info.title;
+        // у ключей из аккаунта имя — тариф («safe-internet: Месяц»), а не общее имя из подписки
+        if (!sub.customName && !sub.account && r.info?.title) sub.name = r.info.title;
       } catch (e) {
         sub.error = e.message;
         sub.errorAt = Date.now();
@@ -305,8 +313,94 @@ async function scheduleRefresh() {
   return period;
 }
 
+// ---------- аккаунт VPN-сервиса (вход через Google на сайте) ----------
+// Вход: открываем {сайт}/ext/login?nonce=…, сайт ведёт на Google и в конце на
+// {сайт}/ext/done#token=…&nonce=…, где скрипт account-done.js передаёт токен сюда.
+// Ключи берём из {сайт}/api/ext/keys и держим подписки из аккаунта в актуальном виде.
+
+const accountSite = (st) => (st.accountSite || ACCOUNT.site).replace(/\/+$/, '');
+
+function randomNonce() {
+  const b = crypto.getRandomValues(new Uint8Array(24));
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function accountFetch(st, path, init = {}) {
+  const r = await fetch(accountSite(st) + path, {
+    ...init,
+    cache: 'no-store',
+    credentials: 'omit',
+    headers: { Authorization: 'Bearer ' + st.account.token, Accept: 'application/json' },
+  });
+  if (r.status === 401) {
+    const e = new Error('Вход устарел — войдите снова');
+    e.expired = true;
+    throw e;
+  }
+  if (!r.ok) {
+    let detail = '';
+    try { detail = (await r.json()).detail || ''; } catch {}
+    throw new Error(detail || `Сайт ответил ${r.status}`);
+  }
+  return r.json();
+}
+
+const isoToSec = (iso) => (iso ? Math.floor(Date.parse(iso) / 1000) || 0 : 0);
+
+// Сверяет подписки из аккаунта с ключами на сайте. true — состав подписок изменился.
+async function syncAccount() {
+  let st = await load();
+  if (!st.account?.token) return false;
+  busy.account = true;
+  notify();
+  try {
+    const data = await accountFetch(st, '/api/ext/keys');
+    st = await load(); // за время запроса могли что-то поменять
+    const keys = (data.keys || []).filter((k) => /^https?:\/\//i.test(k.subscription_url || ''));
+    const urls = new Set(keys.map((k) => k.subscription_url));
+    let changed = false;
+    // ключи, которых больше нет (истекли или удалены в боте), убираем
+    const subs = st.subs.filter((s) => {
+      const keep = !s.account || urls.has(s.url);
+      if (!keep) changed = true;
+      return keep;
+    });
+    for (const k of keys) {
+      const fields = { account: true, keyId: k.id, mirror: k.mirror_url || '', expireAt: isoToSec(k.expire_at), plan: k.plan_label || '' };
+      const cur = subs.find((s) => s.url === k.subscription_url);
+      if (cur) {
+        Object.assign(cur, fields);
+        if (!cur.customName && k.plan_label) cur.name = `${ACCOUNT.name}: ${k.plan_label}`;
+      } else {
+        subs.push({ id: 'sub' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), url: k.subscription_url,
+          name: `${ACCOUNT.name}${k.plan_label ? ': ' + k.plan_label : ''}`, customName: false, servers: [], ...fields });
+        changed = true;
+      }
+    }
+    await save({
+      subs,
+      account: { ...st.account, name: data.account?.name || st.account.name || '', email: data.account?.email || st.account.email || '',
+        renewUrl: data.renew_url || ACCOUNT.bot, syncedAt: Date.now(), keys: keys.length, error: '', expired: false },
+    });
+    return changed;
+  } catch (e) {
+    st = await load();
+    if (st.account) await save({ account: { ...st.account, error: e.message, expired: !!e.expired, errorAt: Date.now() } });
+    return false;
+  } finally {
+    busy.account = false;
+    notify();
+  }
+}
+
+// Плановое обновление: сначала ключи из аккаунта, затем сами подписки.
+async function refreshAll() {
+  await syncAccount();
+  await refreshSubs();
+}
+
 ext.alarms.onAlarm.addListener((a) => {
-  if (a.name === 'refresh') refreshSubs();
+  if (a.name === 'refresh') refreshAll();
   if (a.name === 'updates') checkUpdates(true).catch(() => {});
 });
 
@@ -500,7 +594,57 @@ const handlers = {
   },
 
   async refresh({ subId }) {
-    await refreshSubs(subId);
+    if (subId) await refreshSubs(subId);
+    else await refreshAll();
+    return getState();
+  },
+
+  // ----- аккаунт -----
+  async accountLogin() {
+    const st = await load();
+    const nonce = randomNonce();
+    await sessionStore.set({ loginNonce: nonce, loginAt: Date.now() });
+    await save({ account: st.account ? { ...st.account, error: '' } : null, accountError: '' });
+    await ext.tabs.create({ url: `${accountSite(st)}/ext/login?nonce=${encodeURIComponent(nonce)}` });
+    return getState();
+  },
+
+  // Пришло со страницы {сайт}/ext/done (скрипт account-done.js)
+  async accountDone({ params }, sender) {
+    const st = await load();
+    const site = accountSite(st);
+    if (!sender?.url || !sender.url.startsWith(site + '/ext/done')) throw new Error('Чужая страница');
+    const { loginNonce, loginAt = 0 } = await sessionStore.get(['loginNonce', 'loginAt']);
+    // вход начат именно этим расширением и не позже 15 минут назад
+    if (!loginNonce || params.nonce !== loginNonce || Date.now() - loginAt > 15 * 60 * 1000) {
+      return { ok: false, message: 'Вход устарел. Нажмите «Войти» в окне VlessBridge ещё раз.' };
+    }
+    await sessionStore.set({ loginNonce: '' });
+    if (params.error || !params.token) {
+      await save({ accountError: params.error || 'invalid' });
+      return { ok: false };
+    }
+    await save({ account: { token: params.token, email: params.email || '', at: Date.now() }, accountError: '' });
+    await syncAccount();
+    refreshSubs(); // серверы догрузятся в фоне — страницу входа не держим
+    const after = await load();
+    if (sender.tab?.id != null) setTimeout(() => ext.tabs.remove(sender.tab.id).catch(() => {}), 2500);
+    return { ok: true, keys: after.account?.keys || 0 };
+  },
+
+  async accountSync() {
+    if (await syncAccount()) await refreshSubs();
+    return getState();
+  },
+
+  async accountLogout() {
+    const st = await load();
+    if (st.account?.token) {
+      await accountFetch(st, '/api/ext/logout', { method: 'POST' }).catch(() => {}); // отзываем токен на сайте
+    }
+    const after = await load();
+    await save({ account: null, accountError: '', subs: after.subs.filter((s) => !s.account) });
+    await applyCore();
     return getState();
   },
 
@@ -528,6 +672,9 @@ const handlers = {
 
   async removeSub({ id }) {
     const st = await load();
+    if (st.subs.find((s) => s.id === id)?.account && st.account) {
+      throw new Error(`Это ключ из аккаунта ${ACCOUNT.name}: он исчезнет сам, когда закончится. Чтобы убрать все такие ключи, выйдите из аккаунта.`);
+    }
     await save({ subs: st.subs.filter((s) => s.id !== id) });
     await applyCore();
     return getState();
@@ -652,7 +799,7 @@ const handlers = {
 ext.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const h = handlers[msg?.type];
   if (!h) return false;
-  h(msg)
+  h(msg, sender)
     .then((result) => sendResponse({ ok: true, result }))
     .catch((e) => sendResponse({ ok: false, error: e.message }));
   return true;

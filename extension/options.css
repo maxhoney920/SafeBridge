@@ -79,3 +79,7 @@ pre.log { margin: 12px 0 0; max-height: 300px; overflow: auto; background: var(-
 .danger-zone { margin-top: 16px; }
 .side .made-by { text-align: left; padding: 18px 10px 0; }
 .side .made-by a { padding: 0; background: none; text-decoration: underline; }
+.card.account { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.acc-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 320px; font-size: 13.5px; }
+.acc-text b { font-size: 15px; }
+.sub .title .badge { margin-left: 8px; vertical-align: 2px; font-weight: 500; }

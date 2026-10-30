@@ -127,3 +127,14 @@ details.alt .cmd { margin: 6px 0 4px; }
 }
 .related-list { color: var(--muted); overflow-wrap: anywhere; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
 .related-actions { display: flex; align-items: center; gap: 8px; }
+
+/* вход в аккаунт VPN-сервиса */
+.account-box { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.account-box p { color: var(--ink); line-height: 1.4; }
+.account-box p.muted { color: var(--muted); font-size: 12.5px; }
+.btn.login { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; }
+.btn.login .g { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #fff; color: #4285f4; font-weight: 700; font-size: 12px; }
+.or { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+.or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.notice-actions { margin-top: 6px; }
+.notice-actions .btn.quiet { color: var(--bad); padding-left: 0; text-decoration: underline; }

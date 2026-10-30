@@ -1,5 +1,5 @@
 import { ext, isFirefox } from './compat.js';
-import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, installSteps, madeBy, MIN_HELPER, versionLess, MODES, LIST_NAMES, presetFor, relatedDomains } from './common.js';
+import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, installSteps, madeBy, MIN_HELPER, versionLess, MODES, LIST_NAMES, presetFor, relatedDomains, ACCOUNT, ACCOUNT_ERRORS, expiringSubs, fmtLeft, subExpire } from './common.js';
 
 const app = document.getElementById('app');
 let state = null;
@@ -70,19 +70,73 @@ function viewMissingHost() {
   return box;
 }
 
+const openUrl = (url) => ext.tabs.create({ url });
+
+// Ошибка последнего входа в аккаунт (не привязан Google и т. п.)
+function accountErrorBox() {
+  const code = state.accountError;
+  if (!code) return null;
+  return el('div', { class: 'notice' }, ACCOUNT_ERRORS[code] || ACCOUNT_ERRORS.invalid,
+    code === 'not_linked' && el('div', { class: 'notice-actions' },
+      el('button', { class: 'btn quiet', onclick: () => openUrl(ACCOUNT.bot), text: 'Открыть бота' })));
+}
+
+function loginButton(label = 'Войти через Google') {
+  return el('button', { class: 'btn primary login', onclick: () => act('accountLogin', {}, 'login') },
+    el('span', { class: 'g', 'aria-hidden': 'true', text: 'G' }), label);
+}
+
 function viewNoSubs() {
   const input = el('input', { class: 'input', type: 'url', placeholder: 'https://…/sub/…', 'aria-label': 'Ссылка на подписку' });
   const add = () => act('addSub', { url: input.value }, 'addSub');
   input.addEventListener('keydown', (e) => e.key === 'Enter' && add());
-  setTimeout(() => input.focus(), 0);
+  const acc = state.account;
+  let top;
+  if (acc && !acc.expired) {
+    const syncing = state.busy.account || pendingAction === 'accountSync';
+    top = el('div', { class: 'account-box' },
+      el('p', {}, 'Вы вошли в ', el('b', { text: ACCOUNT.name }), acc.email ? ` как ${acc.email}` : '', '.'),
+      el('p', { class: 'muted', text: acc.error ? `Не удалось получить ключи: ${acc.error}` : 'Активных ключей пока нет. Получите или продлите ключ в боте — он появится здесь сам.' }),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn primary', onclick: () => openUrl(acc.renewUrl || ACCOUNT.bot), text: 'Открыть бота' }),
+        el('button', { class: 'btn', disabled: syncing, onclick: () => act('accountSync', {}, 'accountSync') }, syncing ? el('span', { class: 'spinner' }) : 'Проверить снова'),
+        el('button', { class: 'btn quiet', onclick: () => act('accountLogout', {}, 'logout'), text: 'Выйти' })));
+  } else {
+    top = el('div', { class: 'account-box' },
+      el('p', {}, 'Клиентам ', el('b', { text: ACCOUNT.name }), ': войдите через Google — ваши ключи добавятся сами и будут обновляться, когда вы покупаете или продлеваете ключ в боте.'),
+      acc?.expired && el('p', { class: 'muted', text: 'Вход устарел — войдите ещё раз.' }),
+      loginButton(),
+      accountErrorBox());
+  }
   return el('div', { class: 'empty' },
     el('h1', { text: 'Добавьте подписку' }),
-    el('p', { text: 'Вставьте ссылку на подписку из личного кабинета или бота вашего VPN. Серверы загрузятся автоматически и будут обновляться каждые 2 часа.' }),
+    top,
+    el('div', { class: 'or', text: 'или вставьте ссылку вручную' }),
+    el('p', { class: 'small muted', text: 'Ссылка на подписку из личного кабинета или бота любого VPN-сервиса. Серверы загрузятся сами и будут обновляться каждые 2 часа.' }),
     el('div', { class: 'row' }, input,
-      el('button', { class: 'btn primary', onclick: add, disabled: pendingAction === 'addSub' },
+      el('button', { class: 'btn', onclick: add, disabled: pendingAction === 'addSub' },
         pendingAction === 'addSub' ? el('span', { class: 'spinner' }) : 'Добавить')),
     actionError && el('div', { class: 'notice', text: actionError }),
   );
+}
+
+// Предупреждения аккаунта в основном окне: вход устарел, подписка заканчивается.
+function accountBanners() {
+  const out = [];
+  const acc = state.account;
+  if (acc?.expired) {
+    out.push(el('div', { class: 'update warn' },
+      el('span', { text: `Вход в ${ACCOUNT.name} устарел — новые ключи не подтянутся.` }),
+      el('button', { class: 'btn quiet', onclick: () => act('accountLogin', {}, 'login'), text: 'Войти' })));
+  }
+  const exp = expiringSubs(state)[0];
+  if (exp) {
+    const own = exp.sub.account;
+    out.push(el('div', { class: 'update warn' },
+      el('span', { text: `Подписка «${exp.sub.name}» ${fmtLeft(exp.left)}.` }),
+      own && el('button', { class: 'btn quiet', onclick: () => openUrl(acc?.renewUrl || ACCOUNT.bot), text: 'Продлить' })));
+  }
+  return out;
 }
 
 function bridgeCard(servers) {
@@ -243,7 +297,7 @@ function footer() {
       box.append(el('div', { text: `${state.subs.length > 1 ? sub.name + ': ' : ''}${fmtBytes(used)} из ${fmtBytes(i.total)}` }),
         el('div', { class: 'meter' }, el('i', { style: `width:${Math.min(100, (used / i.total) * 100).toFixed(1)}%` })));
     } else if (state.subs.length > 1) parts.push(sub.name);
-    if (i.expire > 0) parts.push(`до ${fmtDate(i.expire)}`);
+    if (subExpire(sub) > 0) parts.push(`до ${fmtDate(subExpire(sub))}`);
     parts.push(fmtAgo(sub.updatedAt));
     box.append(el('div', { text: parts.join(', ') }));
     if (sub.error) box.append(el('div', { class: 'err', text: `Не удалось обновить: ${sub.error}` }));
@@ -261,6 +315,7 @@ function viewMain() {
   if (actionError) nodes.push(el('div', { class: 'notice', text: actionError }));
   const ub = updateBanner();
   if (ub) nodes.push(ub);
+  nodes.push(...accountBanners());
   nodes.push(el('div', { class: 'mode' }, modeSwitch(), modeHint()));
   nodes.push(...[siteRow()].flat().filter(Boolean));
   const busyRefresh = state.busy.refresh || pendingAction === 'refresh';

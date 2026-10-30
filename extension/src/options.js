@@ -1,6 +1,6 @@
 import { ext, isFirefox } from './compat.js';
 import { MIN_HELPER, versionLess } from './common.js';
-import { el, send, fmtBytes, fmtAgo, fmtDate, PRESETS_VPN, PRESETS_DIRECT, madeBy, normalizeDomain, plural, MODES, LIST_NAMES, DOWNLOADS_PAGE } from './common.js';
+import { el, send, fmtBytes, fmtAgo, fmtDate, PRESETS_VPN, PRESETS_DIRECT, madeBy, normalizeDomain, plural, MODES, LIST_NAMES, DOWNLOADS_PAGE, ACCOUNT, ACCOUNT_ERRORS, subExpire, expiringSubs, fmtLeft } from './common.js';
 
 const app = document.getElementById('app');
 let state = null;
@@ -64,16 +64,21 @@ function subsSection() {
     const facts = [el('span', {}, el('b', { text: String(ok) }), ` ${plural(ok, 'сервер', 'сервера', 'серверов')}`)];
     if (bad) facts.push(el('span', { text: `${bad} не поддерживается` }));
     if (i.total > 0) facts.push(el('span', {}, el('b', { text: fmtBytes((i.upload || 0) + (i.download || 0)) }), ` из ${fmtBytes(i.total)}`));
-    if (i.expire > 0) facts.push(el('span', { text: `действует до ${fmtDate(i.expire)}` }));
+    if (subExpire(sub) > 0) facts.push(el('span', { text: `действует до ${fmtDate(subExpire(sub))}` }));
     facts.push(el('span', { text: fmtAgo(sub.updatedAt) }));
     if (i.via === 'proxy') facts.push(el('span', { text: 'загружена через VPN' }));
+    const fromAccount = sub.account && state.account;
+    const soon = expiringSubs({ subs: [sub] })[0];
     return el('div', { class: 'card sub' },
-      el('div', { class: 'title', text: sub.name }),
+      el('div', { class: 'title' }, sub.name, fromAccount && el('span', { class: 'badge', text: `из аккаунта ${ACCOUNT.name}` })),
       el('div', { class: 'url', text: sub.url }),
       el('div', { class: 'actions' },
         el('button', { class: 'btn', disabled: busy['r' + sub.id], onclick: () => act('refresh', { subId: sub.id }, 'r' + sub.id, 'Подписка обновлена') },
           busy['r' + sub.id] ? spin() : 'Обновить'),
-        el('button', { class: 'btn danger', onclick: () => confirm(`Удалить подписку «${sub.name}»?`) && act('removeSub', { id: sub.id }, 'rm', 'Подписка удалена'), text: 'Удалить' })),
+        fromAccount
+          ? el('button', { class: 'btn', onclick: () => ext.tabs.create({ url: state.account.renewUrl || ACCOUNT.bot }), text: 'Продлить' })
+          : el('button', { class: 'btn danger', onclick: () => confirm(`Удалить подписку «${sub.name}»?`) && act('removeSub', { id: sub.id }, 'rm', 'Подписка удалена'), text: 'Удалить' })),
+      soon && el('div', { class: 'notice', text: `Подписка ${fmtLeft(soon.left)}.` }),
       el('div', { class: 'facts' }, facts),
       /^http:\/\//i.test(sub.url) && !/^http:\/\/(127\.|localhost)/i.test(sub.url) && el('div', { class: 'notice', text: 'Ссылка без https: по дороге её содержимое можно подменить и подсунуть чужие серверы. Попросите у VPN-сервиса ссылку, которая начинается с https://.' }),
       sub.error && el('div', { class: 'notice', text: `Последнее обновление не удалось: ${sub.error}` }),
@@ -82,6 +87,7 @@ function subsSection() {
 
   return el('section', { id: 'subs' },
     el('h2', { text: 'Подписки' }),
+    accountCard(),
     el('p', { class: 'lead', text: `Серверы берутся из ссылки-подписки и обновляются автоматически каждые ${fmtInterval(state.intervalMin)}. Поддерживаются VLESS (Reality, TLS, Vision, XHTTP, WebSocket, gRPC, HTTPUpgrade, VLESS Encryption), Trojan, VMess, Shadowsocks и Hysteria2.` }),
     el('div', { class: 'stack' },
       cards,
@@ -89,6 +95,36 @@ function subsSection() {
         el('div', { class: 'row' }, input,
           el('button', { class: 'btn primary', onclick: add, disabled: busy.addSub }, busy.addSub ? spin() : 'Добавить подписку')),
         errors.addSub && el('div', { class: 'notice', text: errors.addSub }))));
+}
+
+// Вход в аккаунт VPN-сервиса: ключи из бота подтягиваются сами.
+function accountCard() {
+  const acc = state.account;
+  const errCode = state.accountError;
+  if (!acc) {
+    return el('div', { class: 'card account' },
+      el('div', { class: 'acc-text' },
+        el('b', { text: `Аккаунт ${ACCOUNT.name}` }),
+        el('span', { class: 'muted', text: 'Войдите через Google — ключи, которые вы получаете в боте, добавятся сами, а истёкшие исчезнут. Google нужно один раз привязать в боте: «🔗 Привязать Google».' }),
+        errCode && el('span', { class: 'err', text: ACCOUNT_ERRORS[errCode] || ACCOUNT_ERRORS.invalid })),
+      el('button', { class: 'btn primary', onclick: () => act('accountLogin', {}, 'login'), text: 'Войти через Google' }));
+  }
+  const facts = [];
+  if (acc.syncedAt) facts.push(`ключей: ${acc.keys ?? 0}, ${fmtAgo(acc.syncedAt).replace('обновлена', 'проверено')}`);
+  return el('div', { class: 'card account' },
+    el('div', { class: 'acc-text' },
+      el('b', {}, `Аккаунт ${ACCOUNT.name}`, acc.email || acc.name ? `: ${acc.email || acc.name}` : ''),
+      el('span', { class: 'muted', text: facts.join(' · ') || 'Загружаю ключи…' }),
+      acc.expired && el('span', { class: 'err', text: 'Вход устарел — войдите снова, иначе новые ключи не появятся.' }),
+      !acc.expired && acc.error && el('span', { class: 'err', text: `Не удалось проверить ключи: ${acc.error}` }),
+      errors.accountSync && el('span', { class: 'err', text: errors.accountSync })),
+    el('div', { class: 'row' },
+      acc.expired
+        ? el('button', { class: 'btn primary', onclick: () => act('accountLogin', {}, 'login'), text: 'Войти снова' })
+        : el('button', { class: 'btn', disabled: busy.accountSync || state.busy.account, onclick: () => act('accountSync', {}, 'accountSync', 'Ключи проверены') },
+          busy.accountSync || state.busy.account ? spin() : 'Проверить ключи'),
+      el('button', { class: 'btn', onclick: () => ext.tabs.create({ url: acc.renewUrl || ACCOUNT.bot }), text: 'Открыть бота' }),
+      el('button', { class: 'btn danger', onclick: () => confirm(`Выйти из аккаунта ${ACCOUNT.name}? Ключи из аккаунта удалятся из расширения, подписки, добавленные вручную, останутся.`) && act('accountLogout', {}, 'logout', 'Вы вышли из аккаунта'), text: 'Выйти' })));
 }
 
 function fmtInterval(min) {
