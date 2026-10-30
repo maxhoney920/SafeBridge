@@ -52,6 +52,9 @@ func CorePath() (string, error) {
 	defer coreMu.Unlock()
 	if corePath == "" && corePathErr == nil {
 		corePath, corePathErr = resolveCore()
+		if corePathErr == nil {
+			clearQuarantine(corePath) // ядро могло получить метку карантина раньше
+		}
 	}
 	return corePath, corePathErr
 }
@@ -162,6 +165,7 @@ func writeExecutable(p string, r io.Reader) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
+	clearQuarantine(tmp)
 	return os.Rename(tmp, p)
 }
 

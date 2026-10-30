@@ -142,7 +142,11 @@ func copySelf(dst string) error {
 		out.Close()
 		return err
 	}
-	return out.Close()
+	if err := out.Close(); err != nil {
+		return err
+	}
+	clearQuarantine(dst)
+	return nil
 }
 
 func runInstall(extraIDs []string) error {

@@ -375,6 +375,7 @@ func UpdateHelper(ctx context.Context, proxyPort int) (map[string]any, error) {
 	if err := os.WriteFile(tmp, b, 0o755); err != nil {
 		return nil, err
 	}
+	clearQuarantine(tmp) // SHA-256 уже сверен; без этого macOS не даст запустить файл
 	check := exec.Command(tmp, "version")
 	hideWindow(check)
 	if v, err := check.Output(); err != nil || !strings.Contains(string(v), li.Version) {
