@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Сборка помощника со встроенным Xray-core под все платформы + архив расширения.
+# SafeBridge: сборка помощника со встроенным Xray-core под все платформы + архивы расширения.
+# Подписанный .xpi для Firefox по-прежнему называется vlessbridge-firefox-*: на это имя
+# ссылается updates.json у уже установленных копий.
 #
 #   ./build.sh                 # все платформы
 #   ./build.sh linux/amd64     # только указанные
@@ -54,16 +56,19 @@ for t in "${TARGETS[@]}"; do
   core=$(fetch_core "$os" "$arch")
   gzip -9 -c "$core" > host/core/xray.gz
   suffix=""; [ "$os" = windows ] && suffix=".exe"
-  out="$DIST/vlessbridge-$os-$arch$suffix"
+  out="$DIST/safebridge-$os-$arch$suffix"
   (cd host && CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -tags embedcore -trimpath \
     -ldflags "-s -w -X main.version=$VERSION -X main.extensionIDs=$EXTENSION_IDS -X main.bundledXray=$XRAY_VERSION -X main.updateBase=$UPDATE_BASE" -o "../$out" .)
   echo "  ✓ $out ($(du -h "$out" | cut -f1))"
+  # прежнее имя файла — для старых ссылок и версий расширения (в git это тот же объект, места не занимает)
+  cp "$out" "$DIST/vlessbridge-$os-$arch$suffix"
   if [ "$os" = darwin ]; then
     # для кнопки «Скачать»: zip сохраняет право на запуск, двойной клик открывает установку в Терминале
-    tmpd=$(mktemp -d); cp "$out" "$tmpd/vlessbridge"; chmod +x "$tmpd/vlessbridge"
-    (cd "$tmpd" && zip -q "vlessbridge-macos-$arch.zip" vlessbridge)
-    mv "$tmpd/vlessbridge-macos-$arch.zip" "$DIST/"; rm -rf "$tmpd"
-    echo "  ✓ $DIST/vlessbridge-macos-$arch.zip"
+    tmpd=$(mktemp -d); cp "$out" "$tmpd/safebridge"; chmod +x "$tmpd/safebridge"
+    (cd "$tmpd" && zip -q "safebridge-macos-$arch.zip" safebridge)
+    mv "$tmpd/safebridge-macos-$arch.zip" "$DIST/"; rm -rf "$tmpd"
+    cp "$DIST/safebridge-macos-$arch.zip" "$DIST/vlessbridge-macos-$arch.zip"
+    echo "  ✓ $DIST/safebridge-macos-$arch.zip"
   fi
 done
 rm -f host/core/xray.gz
@@ -74,21 +79,32 @@ import hashlib, json, os, sys
 dist, ver, xray = sys.argv[1:4]
 files = {}
 for name in sorted(os.listdir(dist)):
-    if not name.startswith("vlessbridge-") or name.endswith((".zip", ".xpi")) or name.startswith("vlessbridge-macos"):
+    if not name.startswith("safebridge-") or name.endswith((".zip", ".xpi")) or name.startswith("safebridge-macos"):
         continue
-    key = name[len("vlessbridge-"):].removesuffix(".exe")  # windows-amd64, darwin-arm64, linux-amd64
+    key = name[len("safebridge-"):].removesuffix(".exe")  # windows-amd64, darwin-arm64, linux-amd64
     with open(os.path.join(dist, name), "rb") as f:
         files[key] = {"name": name, "sha256": hashlib.sha256(f.read()).hexdigest()}
 json.dump({"version": ver, "xray": xray, "files": files}, open(os.path.join(dist, "latest.json"), "w"), indent=2)
 print("✓", os.path.join(dist, "latest.json"), "—", ", ".join(files))
 PY
 
-# архив расширения: внутри одна папка VlessBridge с manifest.json
-rm -rf "$DIST/VlessBridge" "$DIST/vlessbridge-extension-$VERSION.zip"
-cp -r extension "$DIST/VlessBridge"
-rm -f "$DIST/VlessBridge/manifest.firefox.json" "$DIST/VlessBridge/background.html"
-(cd "$DIST" && zip -qr "vlessbridge-extension-$VERSION.zip" VlessBridge -x '*.DS_Store' && rm -rf VlessBridge)
-cp "$DIST/vlessbridge-extension-$VERSION.zip" "$DIST/vlessbridge-extension.zip"  # постоянная ссылка на последнюю версию
+# архив расширения: внутри одна папка SafeBridge с manifest.json
+rm -rf "$DIST/SafeBridge" "$DIST/safebridge-extension-$VERSION.zip"
+cp -r extension "$DIST/SafeBridge"
+rm -f "$DIST/SafeBridge/manifest.firefox.json" "$DIST/SafeBridge/background.html"
+(cd "$DIST" && zip -qr "safebridge-extension-$VERSION.zip" SafeBridge -x '*.DS_Store' && rm -rf SafeBridge)
+cp "$DIST/safebridge-extension-$VERSION.zip" "$DIST/safebridge-extension.zip"  # постоянная ссылка на последнюю версию
+cp "$DIST/safebridge-extension.zip" "$DIST/vlessbridge-extension.zip"         # прежнее имя
+# по latest.json расширение в Chrome узнаёт, что вышла новая версия, и даёт ссылку на архив
+python3 - "$DIST" "$VERSION" <<'PY'
+import hashlib, json, os, sys
+dist, ver = sys.argv[1:3]
+p = os.path.join(dist, "latest.json")
+li = json.load(open(p))
+name = f"safebridge-extension-{ver}.zip"
+li["extension"] = {"version": ver, "name": name, "sha256": hashlib.sha256(open(os.path.join(dist, name), "rb").read()).hexdigest()}
+json.dump(li, open(p, "w"), indent=2)
+PY
 
 # расширение для Firefox: тот же код, манифест V2 и фоновая страница; .xpi — это zip с manifest.json в корне
 rm -rf "$DIST/ff" && cp -r extension "$DIST/ff"
@@ -107,6 +123,7 @@ rm -f "$DIST/vlessbridge-firefox-$VERSION.xpi"
 (cd "$DIST/ff" && zip -qr "../vlessbridge-firefox-$VERSION.xpi" . -x '*.DS_Store')
 rm -rf "$DIST/ff"
 cp "$DIST/vlessbridge-firefox-$VERSION.xpi" "$DIST/vlessbridge-firefox.xpi"
+cp "$DIST/vlessbridge-firefox-$VERSION.xpi" "$DIST/safebridge-firefox.xpi"  # CI заменит подписанным
 echo "✓ $DIST/vlessbridge-firefox-$VERSION.xpi"
 cp install.sh "$DIST/install.sh"
-echo "✓ $DIST/vlessbridge-extension-$VERSION.zip"
+echo "✓ $DIST/safebridge-extension-$VERSION.zip"

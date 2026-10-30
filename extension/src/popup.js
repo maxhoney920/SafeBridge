@@ -78,7 +78,8 @@ function accountErrorBox() {
   if (!code) return null;
   return el('div', { class: 'notice' }, ACCOUNT_ERRORS[code] || ACCOUNT_ERRORS.invalid,
     code === 'not_linked' && el('div', { class: 'notice-actions' },
-      el('button', { class: 'btn quiet', onclick: () => openUrl(ACCOUNT.bot), text: 'Открыть бота' })));
+      el('button', { class: 'btn quiet', onclick: () => openUrl(ACCOUNT.bot), text: 'Открыть бота' }),
+      el('button', { class: 'btn quiet', onclick: () => openUrl(ACCOUNT.cabinet), text: 'Личный кабинет' })));
 }
 
 function loginButton(label = 'Войти через Google') {
@@ -101,6 +102,7 @@ function viewNoSubs() {
         : 'Активных ключей пока нет. Получите или продлите ключ в боте — он появится здесь сам.' }),
       el('div', { class: 'row' },
         el('button', { class: 'btn primary', onclick: () => openUrl(acc.renewUrl || ACCOUNT.bot), text: 'Открыть бота' }),
+        el('button', { class: 'btn', onclick: () => openUrl(ACCOUNT.cabinet), text: 'Личный кабинет' }),
         el('button', { class: 'btn', disabled: syncing, onclick: () => act('accountSync', {}, 'accountSync') }, syncing ? el('span', { class: 'spinner' }) : 'Проверить снова'),
         el('button', { class: 'btn quiet', onclick: () => act('accountLogout', {}, 'logout'), text: 'Выйти' })));
   } else {
@@ -155,27 +157,31 @@ function bridgeCard(servers) {
     disabled: pendingAction === 'toggle',
     onclick: () => act('toggle', { on: !state.enabled }, 'toggle'),
   },
-    svgArch(),
+    shieldBadge(),
     el('span', { class: 'state', text: stateText }),
     el('span', { class: 'server', text: sel ? `${sel.name}${ms > 0 ? `   ${ms} мс` : ''}` : 'Сервер не выбран' }),
     el('span', { class: 'knob', 'aria-hidden': 'true' }),
   );
 }
 
-function svgArch() {
+// Щит из логотипа SafeBridge: серый — выключено, янтарный — подключено
+function shieldBadge() {
   const ns = 'http://www.w3.org/2000/svg';
+  const wrap = el('span', { class: 'shield', 'aria-hidden': 'true' });
   const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('viewBox', '0 0 150 84');
-  svg.setAttribute('class', 'arch');
-  svg.setAttribute('aria-hidden', 'true');
-  const p = document.createElementNS(ns, 'path');
-  p.setAttribute('d', 'M8 60 H142 M30 60 A45 45 0 0 1 120 60 M55 60 V36 M75 60 V22 M95 60 V36');
-  p.setAttribute('fill', 'none');
-  p.setAttribute('stroke', 'currentColor');
-  p.setAttribute('stroke-width', '7');
-  p.setAttribute('stroke-linecap', 'round');
-  svg.append(p);
-  return svg;
+  svg.setAttribute('viewBox', '0 0 100 100');
+  for (const [d, cls] of [
+    ['M50 8 L86 20 C86 54 72 78 50 92 C28 78 14 54 14 20 Z', 's-left'],
+    ['M50 8 L86 20 C86 54 72 78 50 92 Z', 's-right'],
+    ['M33 44 L50 66 L70 34 L59 34 L50 50 L42 42 Z', 's-cut'],
+  ]) {
+    const p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', d);
+    p.setAttribute('class', cls);
+    svg.append(p);
+  }
+  wrap.append(svg);
+  return wrap;
 }
 
 function modeSwitch() {
@@ -252,6 +258,15 @@ function relatedRow() {
       el('span', { class: 'muted small', text: 'страница обновится сама' })));
 }
 
+// Новая версия расширения (Chrome): ведём в настройки, там архив и как заменить папку
+function extUpdateBanner() {
+  const e = state.updates?.extension;
+  if (!e?.available) return null;
+  return el('div', { class: 'update' },
+    el('span', { text: `Вышла SafeBridge ${e.latest}` }),
+    el('button', { class: 'btn quiet', onclick: () => { ext.tabs.create({ url: ext.runtime.getURL('options.html#helper') }); }, text: 'Обновить' }));
+}
+
 function updateBanner() {
   if (state.host && versionLess(state.host.version, MIN_HELPER)) {
     return el('div', { class: 'update warn' },
@@ -285,9 +300,9 @@ function subHeader(sub) {
   if (exp > 0) {
     const d = new Date(exp * 1000);
     const short = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', ...(d.getFullYear() !== new Date().getFullYear() && { year: 'numeric' }) });
-    parts.push(soon ? fmtLeft(soon.left) : `до ${short}`);
+    parts.push(soon ? fmtLeft(soon.left) : `до ${short.replace(/\s*г\.$/, '')}`);
   }
-  parts.push(fmtAgo(sub.updatedAt));
+  parts.push(fmtAgo(sub.updatedAt).replace(/^обновлена /, ''));
   return el('div', { class: 'group' },
     el('div', { class: 'group-name', text: sub.name }),
     el('div', { class: 'group-info' + (soon ? ' soon' : ''), text: parts.join(' · ') }),
@@ -321,11 +336,13 @@ function viewMain() {
   const nodes = [bridgeCard(servers)];
   if (state.enabled && !state.core.running && state.coreError) nodes.push(el('div', { class: 'notice', text: state.coreError }));
   if (state.proxyControl === 'controlled_by_other_extensions') {
-    nodes.push(el('div', { class: 'notice', text: 'Настройками прокси управляет другое расширение. Отключите его, чтобы VlessBridge заработал.' }));
+    nodes.push(el('div', { class: 'notice', text: 'Настройками прокси управляет другое расширение. Отключите его, чтобы SafeBridge заработал.' }));
   }
   if (actionError) nodes.push(el('div', { class: 'notice', text: actionError }));
   const ub = updateBanner();
   if (ub) nodes.push(ub);
+  const eb = extUpdateBanner();
+  if (eb) nodes.push(eb);
   nodes.push(...accountBanners());
   nodes.push(el('div', { class: 'mode' }, modeSwitch(), modeHint()));
   nodes.push(...[siteRow()].flat().filter(Boolean));

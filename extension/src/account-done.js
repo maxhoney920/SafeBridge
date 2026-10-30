@@ -14,17 +14,17 @@
     if (title) title.textContent = t;
     if (text && x != null) text.textContent = x;
   };
-  if (params.token) show('Входим…', 'Загружаем ваши ключи в VlessBridge.');
+  if (params.token) show('Входим…', 'Загружаем ваши ключи в SafeBridge.');
 
   api.runtime.sendMessage({ type: 'accountDone', params }).then((r) => {
     const res = r?.result;
-    if (!r?.ok) return show('Не получилось войти', r?.error || 'Попробуйте ещё раз из окна VlessBridge.');
+    if (!r?.ok) return show('Не получилось войти', r?.error || 'Попробуйте ещё раз из окна SafeBridge.');
     if (res?.message) return show('Не получилось войти', res.message);
     if (res?.ok) {
       show('Готово!', res.keys
-        ? `Ключи добавлены в VlessBridge: ${res.keys}. Нажмите на значок расширения и включите VPN. Вкладка закроется сама.`
-        : 'Вы вошли, но активных ключей пока нет. Получите ключ в боте — он появится в VlessBridge сам.');
+        ? `Ключи добавлены в SafeBridge: ${res.keys}. Нажмите на значок расширения и включите VPN. Вкладка закроется сама.`
+        : 'Вы вошли, но активных ключей пока нет. Получите ключ в боте — он появится в SafeBridge сам.');
     }
     // ошибки (не привязан Google и т. п.) страница сайта уже показала сама
-  }).catch(() => show('Не получилось войти', 'Расширение VlessBridge не ответило. Обновите его и попробуйте ещё раз.'));
+  }).catch(() => show('Не получилось войти', 'Расширение SafeBridge не ответило. Обновите его и попробуйте ещё раз.'));
 })();

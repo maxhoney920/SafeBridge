@@ -1,6 +1,8 @@
 .wrap { max-width: 760px; margin: 0 auto; padding: 40px 24px 80px; }
 .brandrow { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; margin-bottom: 28px; }
-.logo { width: 24px; height: 24px; color: var(--accent); }
+.brand-logo { width: 30px; height: 30px; border-radius: 50%; }
+.brand-name { font-weight: 800; }
+.brand-name b { color: var(--accent-solid); font-weight: 800; }
 h1 { font-size: 26px; letter-spacing: -.02em; margin: 0 0 6px; }
 .lead { color: var(--muted); margin: 0 0 24px; max-width: 62ch; }
 

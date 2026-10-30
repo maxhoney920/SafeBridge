@@ -94,7 +94,7 @@ func downloadVia(ctx context.Context, u string, limit int64, proxy *url.URL) ([]
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "VlessBridge/"+version)
+	req.Header.Set("User-Agent", "SafeBridge/"+version)
 	resp, err := cl.Do(req)
 	if err != nil {
 		return nil, err

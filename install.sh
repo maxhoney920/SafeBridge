@@ -1,5 +1,5 @@
 #!/bin/sh
-# Установка помощника VlessBridge на macOS и Linux.
+# Установка помощника SafeBridge на macOS и Linux.
 # Все переменные в ${...}: старый bash на macOS иначе склеивает имя с соседним юникодом.
 #   curl -fsSL https://github.com/maxhoney920/SafeBridge/raw/downloads/install.sh | sh
 set -eu
@@ -21,7 +21,7 @@ esac
 tmp=$(mktemp -d)
 trap 'rm -rf "${tmp}"' EXIT
 echo "Скачиваю помощник для ${os}/${arch}..."
-curl -fL --progress-bar -o "${tmp}/vlessbridge" "${BASE}/vlessbridge-${os}-${arch}"
+curl -fL --progress-bar -o "${tmp}/vlessbridge" "${BASE}/safebridge-${os}-${arch}"
 chmod +x "${tmp}/vlessbridge"
 # на macOS снимаем карантин, иначе Gatekeeper не даст запустить неподписанный файл
 if [ "${os}" = darwin ]; then

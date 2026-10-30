@@ -70,6 +70,7 @@ jobs:
             cp signed/*.xpi "$SIGNED"
           fi
           cp "$SIGNED" dist/vlessbridge-firefox.xpi
+          cp "$SIGNED" dist/safebridge-firefox.xpi
           # updates.json — по нему установленный Firefox сам находит и ставит новую подписанную версию
           H=$(sha256sum "$SIGNED" | cut -d' ' -f1)
           jq -n --arg v "$V" --arg h "sha256:$H" \

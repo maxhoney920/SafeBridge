@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
-  "name": "VlessBridge",
-  "description": "VPN для браузера по VLESS: серверы из ссылки-подписки, выбор сервера и проксирование только нужных сайтов.",
+  "name": "SafeBridge",
+  "description": "SafeBridge — VPN для браузера: серверы из ссылки-подписки, выбор сервера и проксирование только нужных сайтов.",
   "version": "0.0.0",
   "browser_specific_settings": {
     "gecko": {
@@ -15,7 +15,7 @@
   "background": { "page": "background.html" },
   "browser_action": {
     "default_popup": "popup.html",
-    "default_title": "VlessBridge",
+    "default_title": "SafeBridge",
     "default_icon": { "16": "icons/off-16.png", "32": "icons/off-32.png" }
   },
   "options_ui": { "page": "options.html", "open_in_tab": true },

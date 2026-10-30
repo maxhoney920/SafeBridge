@@ -1,6 +1,6 @@
 import { ext, isFirefox, action, sessionStore } from './compat.js';
 import { MIN_HELPER, versionLess } from './common.js';
-import { HOST_NAME, DEFAULTS, load, save, allServers, buildPac, normalizeDomain, domainMatches, ACCOUNT } from './common.js';
+import { HOST_NAME, DEFAULTS, load, save, allServers, buildPac, normalizeDomain, domainMatches, ACCOUNT, LATEST_URL, DOWNLOAD_BASE } from './common.js';
 
 // ---------- связь с помощником ----------
 
@@ -256,7 +256,7 @@ async function updateBadge(st, active) {
   if (problem) await action.setBadgeBackgroundColor({ color: '#C23B3B' });
   const sel = allServers(st).find((s) => s.id === core.selected);
   await action.setTitle({
-    title: active ? `VlessBridge: подключено${sel ? ' — ' + sel.name : ''}` : problem ? 'VlessBridge: нет соединения' : 'VlessBridge: выключено',
+    title: active ? `SafeBridge: подключено${sel ? ' — ' + sel.name : ''}` : problem ? 'SafeBridge: нет соединения' : 'SafeBridge: выключено',
   });
 }
 
@@ -445,15 +445,35 @@ ext.alarms.onAlarm.addListener((a) => {
 
 const UPDATE_PERIOD_MIN = 24 * 60;
 
+// Новая версия самого расширения. Только Chrome и другие Chromium: Firefox обновляет
+// подписанное дополнение сам. Версию берём из того же latest.json, что и помощник.
+async function checkExtension() {
+  if (isFirefox) return null;
+  const current = ext.runtime.getManifest().version;
+  try {
+    const r = await fetch(`${LATEST_URL}?t=${Date.now()}`, { cache: 'no-store', credentials: 'omit' });
+    if (!r.ok) throw new Error(`GitHub ответил ${r.status}`);
+    const li = await r.json();
+    const latest = li.extension?.version || '';
+    const name = li.extension?.name || 'safebridge-extension.zip';
+    if (!/^[\w.-]+\.zip$/.test(name)) throw new Error('Неожиданное имя файла');
+    return { current, latest, available: !!latest && versionLess(current, latest), url: DOWNLOAD_BASE + name, checkedAt: Date.now() };
+  } catch (e) {
+    return { current, error: e.message, checkedAt: Date.now() };
+  }
+}
+
 async function checkUpdates(auto = false) {
   if (busy.updates) return (await load()).updates;
-  if (hostInfo && versionLess(hostInfo.version, MIN_HELPER)) return (await load()).updates; // старый помощник не умеет
   busy.updates = true;
   notify();
   try {
+    const extension = await checkExtension();
+    if (extension) await save({ updates: { ...((await load()).updates || {}), extension } });
+    if (hostInfo && versionLess(hostInfo.version, MIN_HELPER)) return (await load()).updates; // старый помощник не умеет
     if (!(await connect())) throw new Error(hostError || 'Помощник не подключён');
     const info = await call('checkUpdates', {}, 90000);
-    const updates = { ...info, checkedAt: Date.now() };
+    const updates = { ...info, extension: extension || undefined, checkedAt: Date.now() };
     await save({ updates });
     const st = await load();
     if (auto && st.autoCore && info.core?.available) await updateCore().catch(() => {});
@@ -654,7 +674,7 @@ const handlers = {
     const { loginNonce, loginAt = 0 } = await sessionStore.get(['loginNonce', 'loginAt']);
     // вход начат именно этим расширением и не позже 15 минут назад
     if (!loginNonce || params.nonce !== loginNonce || Date.now() - loginAt > 15 * 60 * 1000) {
-      return { ok: false, message: 'Вход устарел. Нажмите «Войти» в окне VlessBridge ещё раз.' };
+      return { ok: false, message: 'Вход устарел. Нажмите «Войти» в окне SafeBridge ещё раз.' };
     }
     await sessionStore.set({ loginNonce: '' });
     if (params.error || !params.token) {

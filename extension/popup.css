@@ -1,40 +1,43 @@
 body { width: 360px; min-height: 200px; }
 
-.top { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px 14px; }
-.logo { width: 22px; height: 22px; color: var(--accent); }
-.brand { font-weight: 650; letter-spacing: -.01em; flex: 1; }
-.btn.icon { display: grid; place-items: center; padding: 5px; }
+.top { padding: 10px 10px 10px 14px; }
+.top .brand { flex: 1; font-size: 16px; }
+.top .btn.quiet { color: var(--bar-muted); }
+.top .btn.quiet:hover:not(:disabled) { color: var(--bar-ink); background: rgba(255,255,255,.08); }
+.btn.icon { display: grid; place-items: center; padding: 6px; }
 
-#app { padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 12px; }
+#app { padding: 12px 12px 12px; display: flex; flex-direction: column; gap: 12px; }
 .loading { display: grid; place-items: center; height: 140px; }
 
-/* главный переключатель — «мост» */
+/* главный переключатель: щит из логотипа, имя сервера, тумблер */
 .bridge {
-  position: relative;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 2px 12px;
+  gap: 1px 14px;
   width: 100%;
   text-align: left;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  padding: 14px 16px 14px 16px;
+  padding: 14px;
   cursor: pointer;
-  overflow: hidden;
-  transition: background .25s ease, border-color .25s ease, color .25s ease;
+  transition: background .25s ease, border-color .25s ease;
 }
 .bridge:hover { border-color: var(--muted); }
-.bridge .arch {
-  position: absolute; right: 70px; bottom: -18px; width: 150px; height: 84px;
-  color: var(--line); pointer-events: none; opacity: .7;
+.bridge .shield {
+  grid-row: 1 / 3; width: 48px; height: 48px; border-radius: 50%; background: var(--bar);
+  display: grid; place-items: center; box-shadow: inset 0 0 0 2px #4a5664;
+  transition: box-shadow .3s ease;
 }
-.bridge .arch path { stroke-dasharray: 120; stroke-dashoffset: 0; }
-.bridge .state { font-size: 17px; font-weight: 700; letter-spacing: -.01em; position: relative; }
-.bridge .server { grid-column: 1 / 2; position: relative; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bridge .shield svg { width: 28px; height: 28px; }
+.bridge .shield .s-left { fill: #5d6572; transition: fill .3s ease; }
+.bridge .shield .s-right { fill: #4a535f; transition: fill .3s ease; }
+.bridge .shield .s-cut { fill: var(--bar); }
+.bridge .state { font-size: 18px; font-weight: 800; letter-spacing: -.01em; align-self: end; }
+.bridge .server { grid-column: 2; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; align-self: start; }
 .bridge .knob {
-  grid-row: 1 / 3; grid-column: 2; position: relative;
+  grid-row: 1 / 3; grid-column: 3; position: relative;
   width: 46px; height: 26px; border-radius: 13px; background: var(--line);
   transition: background .25s ease;
 }
@@ -42,18 +45,21 @@ body { width: 360px; min-height: 200px; }
   content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
   background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .25s ease;
 }
-.bridge.on { background: var(--accent-solid); border-color: var(--accent-solid); color: var(--on-accent); }
-.bridge.on .server { color: var(--on-accent); opacity: .85; }
-.bridge.on .arch { color: rgba(255,255,255,.18); opacity: 1; }
-.bridge.just-on .arch path { animation: draw .9s ease-out both; }
-.bridge.on .knob { background: rgba(255,255,255,.35); }
+.bridge.on { background: var(--accent-soft); border-color: var(--accent-line); }
+.bridge.on .state { color: var(--accent); }
+.bridge.on .shield { box-shadow: inset 0 0 0 2px var(--shield), 0 0 0 4px rgba(249,173,53,.22), 0 0 16px rgba(249,173,53,.3); }
+.bridge.on .shield .s-left { fill: #f9ad35; }
+.bridge.on .shield .s-right { fill: #ec8b1a; }
+.bridge.on .knob { background: var(--accent-solid); }
 .bridge.on .knob::after { transform: translateX(20px); background: #fff; }
+.bridge.just-on .shield { animation: glow .9s ease-out both; }
 .bridge.problem { border-color: var(--bad); }
-.bridge.problem .state { color: var(--bad); }
+.bridge.problem .state { color: var(--bad); font-size: 15px; }
+.bridge.problem .shield { box-shadow: inset 0 0 0 2px var(--bad); }
 .bridge.problem .knob { background: var(--bad); opacity: .5; }
 .bridge.problem .knob::after { transform: translateX(20px); }
 .bridge:disabled { cursor: progress; }
-@keyframes draw { from { stroke-dashoffset: 120; } to { stroke-dashoffset: 0; } }
+@keyframes glow { from { box-shadow: inset 0 0 0 2px var(--shield), 0 0 0 0 rgba(249,173,53,.6); } to { box-shadow: inset 0 0 0 2px var(--shield), 0 0 0 4px rgba(249,173,53,.22), 0 0 16px rgba(249,173,53,.3); } }
 
 /* режим и подсказка */
 .mode { display: flex; flex-direction: column; gap: 6px; }
@@ -72,8 +78,9 @@ body { width: 360px; min-height: 200px; }
 
 .update {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  font-size: 13px; padding: 6px 6px 6px 12px; border-radius: var(--radius-sm); background: var(--accent-soft);
+  font-size: 13px; padding: 6px 6px 6px 12px; border-radius: var(--radius-sm); background: var(--accent-soft); border: 1px solid var(--accent-line);
 }
+.update .btn.quiet { color: var(--accent); font-weight: 700; }
 details.alt summary { cursor: pointer; color: var(--muted); }
 details.alt .cmd { margin: 6px 0 4px; }
 
@@ -97,6 +104,7 @@ details.alt .cmd { margin: 6px 0 4px; }
 .srv .proto { grid-column: 1; font-size: 11.5px; color: var(--muted); }
 .srv .ping { grid-row: 1 / 3; grid-column: 2; }
 .srv.sel { background: var(--accent-soft); }
+.srv.sel::before { background: var(--accent-solid) !important; }
 .srv.sel::before {
   content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--accent);
 }
@@ -107,7 +115,7 @@ details.alt .cmd { margin: 6px 0 4px; }
 
 .foot { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; padding: 0 2px; }
 .meter { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; margin: 4px 0 2px; }
-.meter i { display: block; height: 100%; background: var(--accent); }
+.meter i { display: block; height: 100%; background: var(--accent-solid); }
 
 /* пустые состояния */
 .empty { display: flex; flex-direction: column; gap: 10px; padding: 6px 2px 4px; }
@@ -122,7 +130,8 @@ details.alt .cmd { margin: 6px 0 4px; }
   padding: 8px 10px; overflow-wrap: anywhere; user-select: all;
 }
 
-.update.warn { background: var(--bad-soft); color: var(--ink); }
+.update.warn { background: var(--accent-soft); color: var(--ink); }
+.update.danger { background: var(--bad-soft); border-color: transparent; }
 
 /* сторонние домены страницы, которые идут мимо VPN */
 .related {

@@ -1,10 +1,11 @@
-# VlessBridge
+# SafeBridge
 
-VPN для браузера по протоколу VLESS. Вы вставляете ссылку-подписку от своего VPN-сервиса, выбираете сервер и решаете, какие сайты открывать через VPN, а какие напрямую. Работает в Firefox, Chrome, Edge, Brave, Яндекс Браузере, Vivaldi и Chromium на Windows, macOS и Linux.
+VPN для браузера по протоколу VLESS (раньше назывался VlessBridge). Вы вставляете ссылку-подписку от своего VPN-сервиса, выбираете сервер и решаете, какие сайты открывать через VPN, а какие напрямую. Работает в Firefox, Chrome, Edge, Brave, Яндекс Браузере, Vivaldi и Chromium на Windows, macOS и Linux.
 
 Через VPN идёт только браузер — остальные программы на компьютере работают как обычно.
 
 <p align="center">
+  <img src="docs/screenshots/popup-login.png" alt="Первый запуск: вход через Google или ссылка-подписка" width="260">
   <img src="docs/screenshots/popup.png" alt="Окно расширения: подключено, список серверов с пингом" width="260">
   <img src="docs/screenshots/popup-dark.png" alt="То же в тёмной теме" width="260">
   <img src="docs/screenshots/popup-sites.png" alt="Режим «Только список»: кнопка для открытой вкладки" width="260">
@@ -13,17 +14,17 @@ VPN для браузера по протоколу VLESS. Вы вставляе
 ## Как это работает
 
 ```
-браузер ──▶ расширение VlessBridge ──▶ помощник на компьютере (ядро Xray) ──▶ VPN-сервер ──▶ сайт
+браузер ──▶ расширение SafeBridge ──▶ помощник на компьютере (ядро Xray) ──▶ VPN-сервер ──▶ сайт
 ```
 
-Браузер сам не умеет подключаться по VLESS, поэтому VlessBridge состоит из двух частей:
+Браузер сам не умеет подключаться по VLESS, поэтому SafeBridge состоит из двух частей:
 
 - **Расширение** — то, что вы видите в браузере: список серверов, кнопка включения, выбор сайтов. Оно направляет трафик браузера в помощник.
 - **Помощник** — небольшая программа на компьютере со встроенным ядром [Xray](https://github.com/XTLS/Xray-core). Она и держит соединение с VPN-сервером. Браузер запускает помощник сам, когда он нужен, и закрывает вместе с собой. Ставится один раз, права администратора не нужны.
 
 ## Возможности
 
-- **Вход для клиентов safe-internet.** Кнопка «Войти через Google» сама добавит все ваши ключи из бота: новые появятся сами, истёкшие исчезнут, а за 3 дня до конца подписки расширение напомнит и предложит продлить. Если нужны не все ключи (например, только «Безлимит», без «Подарка»), лишние выключаются галочкой в настройках. Google нужно один раз привязать в боте («🔗 Привязать Google»). Клиенты других VPN-сервисов просто вставляют ссылку-подписку вручную.
+- **Вход для клиентов safe-internet.** Кнопка «Войти через Google» сама добавит все ваши ключи из бота: новые появятся сами, истёкшие исчезнут, а за 3 дня до конца подписки расширение напомнит и предложит продлить. Если нужны не все ключи (например, только «Безлимит», без «Подарка»), лишние выключаются галочкой в настройках. Google нужно один раз привязать в боте («🔗 Привязать Google») или в [личном кабинете](https://tapp.internet-safe.online/login). Клиенты других VPN-сервисов просто вставляют ссылку-подписку вручную.
 - **Серверы из подписки.** Вставьте ссылку из личного кабинета или бота VPN-сервиса — серверы загрузятся сами. Подписка обновляется каждые 2 часа (интервал можно изменить), есть кнопка «Обновить». Видно остаток трафика и срок действия, если сервис их сообщает.
 - **Выбор сервера.** Список с пингом каждого сервера, переключение за доли секунды. Выбранный сервер сохраняется при обновлении подписки.
 - **Только нужные сайты.** Три режима:
@@ -51,15 +52,17 @@ VPN для браузера по протоколу VLESS. Вы вставляе
 
 #### Chrome, Edge, Brave, Яндекс Браузер, Vivaldi
 
-1. Скачайте [vlessbridge-extension.zip](https://github.com/maxhoney920/SafeBridge/raw/downloads/vlessbridge-extension.zip) и распакуйте его. Папку `VlessBridge` не перемещайте и не удаляйте: браузер загружает расширение из неё.
+1. Скачайте [safebridge-extension.zip](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-extension.zip) и распакуйте его. Папку `SafeBridge` не перемещайте и не удаляйте: браузер загружает расширение из неё.
 2. Откройте страницу расширений: `chrome://extensions` (Edge — `edge://extensions`, Яндекс Браузер — `browser://extensions`).
 3. Включите «Режим разработчика» (переключатель справа вверху).
-4. Нажмите «Загрузить распакованное» и выберите папку `VlessBridge` — ту, внутри которой лежит `manifest.json`.
+4. Нажмите «Загрузить распакованное» и выберите папку `SafeBridge` — ту, внутри которой лежит `manifest.json`.
 5. Закрепите значок расширения на панели (значок пазла → булавка).
+
+**Обновление.** Раз в сутки расширение само проверяет, не вышла ли новая версия, и пишет в окне «Вышла SafeBridge …». Кнопка «Обновить» откроет настройки со ссылкой на архив. Распакуйте его, замените файлами из папки `SafeBridge` содержимое той папки, из которой расширение загружено, и на странице `chrome://extensions` нажмите у SafeBridge круглую стрелку. Подписки и настройки сохранятся. Если у вас стояла папка `VlessBridge`, замените файлы прямо в ней — заново загружать расширение не нужно.
 
 #### Firefox
 
-Нужен Firefox 115 или новее. Откройте [vlessbridge-firefox.xpi](https://github.com/maxhoney920/SafeBridge/raw/downloads/vlessbridge-firefox.xpi) в Firefox и нажмите «Добавить». Дополнение подписано Mozilla, ставится насовсем и обновляется само: Firefox раз в сутки проверяет новую версию (проверить сразу: `about:addons` → шестерёнка → «Проверить наличие обновлений»). Если у вас стоит версия 0.5.2 или старше, один раз поставьте новую по этой ссылке — автообновление появилось в 0.5.3.
+Нужен Firefox 115 или новее. Откройте [safebridge-firefox.xpi](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-firefox.xpi) в Firefox и нажмите «Добавить». Дополнение подписано Mozilla, ставится насовсем и обновляется само: Firefox раз в сутки проверяет новую версию (проверить сразу: `about:addons` → шестерёнка → «Проверить наличие обновлений»). Если у вас стоит версия 0.5.2 или старше, один раз поставьте новую по этой ссылке — автообновление появилось в 0.5.3.
 
 Firefox из Flatpak помощника не видит: песочница Flatpak не даёт запускать программы снаружи. Используйте Firefox из пакета или с сайта Mozilla (snap-версия в Ubuntu тоже должна работать, но она не проверялась).
 
@@ -74,16 +77,16 @@ Firefox из Flatpak помощника не видит: песочница Flat
 
 | Система | Процессор | Файл |
 |---|---|---|
-| Windows | Intel / AMD | [vlessbridge-windows-amd64.exe](https://github.com/maxhoney920/SafeBridge/raw/downloads/vlessbridge-windows-amd64.exe) |
-| Windows | ARM (Snapdragon) | [vlessbridge-windows-arm64.exe](https://github.com/maxhoney920/SafeBridge/raw/downloads/vlessbridge-windows-arm64.exe) |
-| macOS | Apple Silicon (M1–M4) | [vlessbridge-macos-arm64.zip](https://github.com/maxhoney920/SafeBridge/raw/downloads/vlessbridge-macos-arm64.zip) |
-| macOS | Intel | [vlessbridge-macos-amd64.zip](https://github.com/maxhoney920/SafeBridge/raw/downloads/vlessbridge-macos-amd64.zip) |
-| Linux | x86-64 | [vlessbridge-linux-amd64](https://github.com/maxhoney920/SafeBridge/raw/downloads/vlessbridge-linux-amd64) |
-| Linux | ARM64 | [vlessbridge-linux-arm64](https://github.com/maxhoney920/SafeBridge/raw/downloads/vlessbridge-linux-arm64) |
+| Windows | Intel / AMD | [safebridge-windows-amd64.exe](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-windows-amd64.exe) |
+| Windows | ARM (Snapdragon) | [safebridge-windows-arm64.exe](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-windows-arm64.exe) |
+| macOS | Apple Silicon (M1–M4) | [safebridge-macos-arm64.zip](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-macos-arm64.zip) |
+| macOS | Intel | [safebridge-macos-amd64.zip](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-macos-amd64.zip) |
+| Linux | x86-64 | [safebridge-linux-amd64](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-linux-amd64) |
+| Linux | ARM64 | [safebridge-linux-arm64](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-linux-arm64) |
 
 #### Windows
 
-1. Скачайте `vlessbridge-windows-amd64.exe` и откройте его.
+1. Скачайте `safebridge-windows-amd64.exe` и откройте его.
 2. Если появится «Система Windows защитила ваш компьютер», нажмите «Подробнее», затем «Выполнить в любом случае». Предупреждение появляется потому, что у файла нет платной цифровой подписи.
 3. В окне появится отчёт об установке и слово «Готово». Нажмите Enter.
 4. Вернитесь в окно расширения и нажмите «Проверить».
@@ -100,8 +103,8 @@ curl -fsSL https://github.com/maxhoney920/SafeBridge/raw/downloads/install.sh | 
 
 **Или вручную:**
 
-1. Скачайте `vlessbridge-macos-arm64.zip` (на Mac с Intel — `-amd64.zip`) и откройте архив двойным щелчком — рядом появится файл `vlessbridge`.
-2. Откройте `vlessbridge` двойным щелчком. macOS скажет, что не может проверить разработчика, — нажмите «Готово».
+1. Скачайте `safebridge-macos-arm64.zip` (на Mac с Intel — `-amd64.zip`) и откройте архив двойным щелчком — рядом появится файл `safebridge`.
+2. Откройте `safebridge` двойным щелчком. macOS скажет, что не может проверить разработчика, — нажмите «Готово».
 3. Откройте Системные настройки → «Конфиденциальность и безопасность», внизу нажмите «Всё равно открыть» и подтвердите паролем.
 4. В окне Терминала появится «Готово». Вернитесь в окно расширения и нажмите «Проверить».
 
@@ -116,15 +119,15 @@ curl -fsSL https://github.com/maxhoney920/SafeBridge/raw/downloads/install.sh | 
 Или вручную, из папки со скачанным файлом:
 
 ```sh
-chmod +x vlessbridge-linux-amd64
-./vlessbridge-linux-amd64
+chmod +x safebridge-linux-amd64
+./safebridge-linux-amd64
 ```
 
 Вернитесь в окно расширения и нажмите «Проверить».
 
 #### Куда ставится помощник
 
-Помощник копирует себя в папку вашего профиля и регистрируется во всех найденных браузерах, включая Firefox. Скачанный файл после установки можно удалить.
+Помощник копирует себя в папку вашего профиля и регистрируется во всех найденных браузерах, включая Firefox. Скачанный файл после установки можно удалить. Папка по-прежнему называется `VlessBridge`, как до переименования: так уже установленные помощники продолжают обновляться.
 
 | Система | Папка помощника |
 |---|---|
@@ -134,7 +137,7 @@ chmod +x vlessbridge-linux-amd64
 
 ### 3. Подключение
 
-1. Нажмите на значок VlessBridge. Клиенты safe-internet нажимают «Войти через Google», остальные вставляют ссылку-подписку.
+1. Нажмите на значок SafeBridge. Клиенты safe-internet нажимают «Войти через Google», остальные вставляют ссылку-подписку.
 2. Выберите сервер и нажмите на большую кнопку — на ней появится «Подключено».
 3. Если нужно, выберите режим «Только список» или «Исключения» и добавьте сайты.
 

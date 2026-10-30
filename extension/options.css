@@ -4,7 +4,9 @@
 .side a:hover { color: var(--ink); background: var(--line); }
 .side a.cur { color: var(--ink); font-weight: 600; background: var(--surface); }
 .brandrow { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; padding: 0 10px 16px; }
-.logo { width: 24px; height: 24px; color: var(--accent); }
+.brand-logo { width: 30px; height: 30px; border-radius: 50%; }
+.brand-name { font-weight: 800; }
+.brand-name b { color: var(--accent-solid); font-weight: 800; }
 
 #app { display: flex; flex-direction: column; gap: 48px; }
 section { scroll-margin-top: 32px; }
@@ -90,3 +92,7 @@ pre.log { margin: 12px 0 0; max-height: 300px; overflow: auto; background: var(-
 .acc-key input { accent-color: var(--accent-solid); width: 16px; height: 16px; margin: 0; }
 .acc-key .name { font-weight: 600; min-width: 120px; }
 .acc-key.off .name { color: var(--muted); font-weight: 500; }
+.ext-update { margin-bottom: 12px; }
+.ext-update.fresh { border-color: var(--accent-line); background: var(--accent-soft); }
+.ext-update .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.ext-update code { font: 12px ui-monospace, Menlo, Consolas, monospace; background: var(--bg); padding: 1px 5px; border-radius: 4px; }

@@ -12,14 +12,14 @@ export const DOWNLOAD_BASE = REPO_URL + '/raw/downloads/';
 // Все сборки помощника — для страницы установки.
 export const HELPER_FILES = [
   { os: 'windows', name: 'Windows', variants: [
-    { arch: 'amd64', label: 'Обычный компьютер (Intel / AMD)', file: 'vlessbridge-windows-amd64.exe' },
-    { arch: 'arm64', label: 'ARM (Snapdragon, Surface Pro X)', file: 'vlessbridge-windows-arm64.exe' }] },
+    { arch: 'amd64', label: 'Обычный компьютер (Intel / AMD)', file: 'safebridge-windows-amd64.exe' },
+    { arch: 'arm64', label: 'ARM (Snapdragon, Surface Pro X)', file: 'safebridge-windows-arm64.exe' }] },
   { os: 'darwin', name: 'macOS', variants: [
-    { arch: 'arm64', label: 'Apple Silicon (M1–M4)', file: 'vlessbridge-macos-arm64.zip' },
-    { arch: 'amd64', label: 'Intel', file: 'vlessbridge-macos-amd64.zip' }] },
+    { arch: 'arm64', label: 'Apple Silicon (M1–M4)', file: 'safebridge-macos-arm64.zip' },
+    { arch: 'amd64', label: 'Intel', file: 'safebridge-macos-amd64.zip' }] },
   { os: 'linux', name: 'Linux', variants: [
-    { arch: 'amd64', label: 'x86-64', file: 'vlessbridge-linux-amd64' },
-    { arch: 'arm64', label: 'ARM64 (aarch64)', file: 'vlessbridge-linux-arm64' }] },
+    { arch: 'amd64', label: 'x86-64', file: 'safebridge-linux-amd64' },
+    { arch: 'arm64', label: 'ARM64 (aarch64)', file: 'safebridge-linux-arm64' }] },
 ];
 
 // Помощник старше этой версии (первые сборки на sing-box) не умеет XHTTP и обновления.
@@ -48,7 +48,12 @@ export const ACCOUNT = {
   name: 'safe-internet',
   site: 'https://tapp.internet-safe.online',
   bot: 'https://t.me/serv1897236bot',
+  cabinet: 'https://tapp.internet-safe.online/login', // личный кабинет в браузере
 };
+
+// По этому файлу расширение в Chrome узнаёт о своей новой версии (Firefox обновляется сам).
+// raw.githubusercontent.com отдаёт его с CORS, поэтому разрешения на сайт не нужны.
+export const LATEST_URL = 'https://raw.githubusercontent.com/maxhoney920/SafeBridge/downloads/latest.json';
 // Предупреждать о конце подписки за столько дней
 export const EXPIRE_WARN_DAYS = 3;
 
@@ -91,14 +96,14 @@ export function installSteps(os, file) {
       'Вернитесь в окно расширения и нажмите «Проверить».',
     ],
     darwin: [
-      'Откройте скачанный архив двойным щелчком — рядом появится файл vlessbridge.',
-      'Откройте vlessbridge двойным щелчком. macOS скажет, что не может проверить разработчика, — нажмите «Готово».',
+      'Откройте скачанный архив двойным щелчком — рядом появится файл safebridge.',
+      'Откройте safebridge двойным щелчком. macOS скажет, что не может проверить разработчика, — нажмите «Готово».',
       'Откройте Системные настройки → «Конфиденциальность и безопасность», внизу нажмите «Всё равно открыть» и подтвердите паролем.',
       'Дождитесь слова «Готово» в окне Терминала, вернитесь в окно расширения и нажмите «Проверить».',
     ],
     linux: [
       'Откройте терминал в папке загрузок.',
-      `Выполните: chmod +x ${file || 'vlessbridge-linux-*'} && ./${file || 'vlessbridge-linux-*'}`,
+      `Выполните: chmod +x ${file || 'safebridge-linux-*'} && ./${file || 'safebridge-linux-*'}`,
       'Дождитесь слова «Готово», вернитесь в окно расширения и нажмите «Проверить».',
     ],
   }[os] || [];

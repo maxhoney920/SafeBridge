@@ -63,7 +63,7 @@ func allowedOrigins(extra []string) []string {
 func manifestJSON(exePath string, extra []string) []byte {
 	m := map[string]any{
 		"name":            hostName,
-		"description":     "VlessBridge native helper (Xray-core)",
+		"description":     "SafeBridge native helper (Xray-core)",
 		"path":            exePath,
 		"type":            "stdio",
 		"allowed_origins": allowedOrigins(extra),
@@ -98,7 +98,7 @@ func firefoxManifestJSON(exePath string) []byte {
 	}
 	m := map[string]any{
 		"name":               hostName,
-		"description":        "VlessBridge native helper (Xray-core)",
+		"description":        "SafeBridge native helper (Xray-core)",
 		"path":               exePath,
 		"type":               "stdio",
 		"allowed_extensions": ids,
@@ -152,7 +152,7 @@ func copySelf(dst string) error {
 func runInstall(extraIDs []string) error {
 	dir := dataDir()
 	exe := filepath.Join(dir, exeName("vlessbridge"))
-	fmt.Printf("VlessBridge %s — установка помощника\n\n", version)
+	fmt.Printf("SafeBridge %s — установка помощника\n\n", version)
 	fmt.Println("• Каталог:", dir)
 	if err := copySelf(exe); err != nil {
 		return err
@@ -251,6 +251,6 @@ func runUninstall() error {
 		fmt.Println("Не всё удалось удалить:", err)
 		return err
 	}
-	fmt.Println("Помощник VlessBridge удалён. Расширение удалите в настройках браузера.")
+	fmt.Println("Помощник SafeBridge удалён. Расширение удалите в настройках браузера.")
 	return nil
 }

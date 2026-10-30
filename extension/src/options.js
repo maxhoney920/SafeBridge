@@ -108,7 +108,10 @@ function accountCard() {
         el('b', { text: `Аккаунт ${ACCOUNT.name}` }),
         el('span', { class: 'muted', text: 'Войдите через Google — ключи, которые вы получаете в боте, добавятся сами, а истёкшие исчезнут. Google нужно один раз привязать в боте: «🔗 Привязать Google».' }),
         errCode && el('span', { class: 'err', text: ACCOUNT_ERRORS[errCode] || ACCOUNT_ERRORS.invalid })),
-      el('button', { class: 'btn primary', onclick: () => act('accountLogin', {}, 'login'), text: 'Войти через Google' }));
+      el('div', { class: 'row' },
+        el('button', { class: 'btn primary', onclick: () => act('accountLogin', {}, 'login'), text: 'Войти через Google' }),
+        el('a', { class: 'btn', href: ACCOUNT.bot, target: '_blank', rel: 'noopener', text: 'Бот' }),
+        el('a', { class: 'btn', href: ACCOUNT.cabinet, target: '_blank', rel: 'noopener', text: 'Личный кабинет' })));
   }
   const facts = [];
   const all = acc.allKeys || [];
@@ -141,6 +144,7 @@ function accountCard() {
         : el('button', { class: 'btn', disabled: busy.accountSync || state.busy.account, onclick: () => act('accountSync', {}, 'accountSync', 'Ключи проверены') },
           busy.accountSync || state.busy.account ? spin() : 'Проверить ключи'),
       el('button', { class: 'btn', onclick: () => ext.tabs.create({ url: acc.renewUrl || ACCOUNT.bot }), text: 'Открыть бота' }),
+      el('a', { class: 'btn', href: ACCOUNT.cabinet, target: '_blank', rel: 'noopener', text: 'Личный кабинет' }),
       el('button', { class: 'btn danger', onclick: () => confirm(`Выйти из аккаунта ${ACCOUNT.name}? Ключи из аккаунта удалятся из расширения, подписки, добавленные вручную, останутся.`) && act('accountLogout', {}, 'logout', 'Вы вышли из аккаунта'), text: 'Выйти' })),
     keyList);
 }
@@ -288,9 +292,23 @@ function helperSection() {
     + (u.core?.lastResult ? ` (${u.core.lastResult})` : '');
   const autoCore = el('input', { type: 'checkbox', id: 'autoCore', checked: state.autoCore, onchange: (e) => act('setAutoCore', { on: e.target.checked }, 'autoCore') });
 
+  const e = u.extension;
+  const extLine = !e ? null
+    : e.error ? `версия ${e.current}, не удалось проверить: ${e.error}`
+    : e.available ? `установлена ${e.current}, вышла ${e.latest}` : `${e.current} — последняя версия`;
+  const extCard = !isFirefox && el('div', { class: 'card stack ext-update' + (e?.available ? ' fresh' : '') },
+    el('div', { class: 'upd-row' },
+      el('div', {}, el('b', { text: 'Расширение SafeBridge' }), el('div', { class: 'muted small', text: extLine || `версия ${ext.runtime.getManifest().version}, ещё не проверялось` })),
+      e?.available && el('a', { class: 'btn primary', href: e.url, text: `Скачать ${e.latest}` })),
+    e?.available && el('ol', { class: 'small steps' },
+      el('li', { text: 'Скачайте архив и распакуйте его.' }),
+      el('li', { text: 'Замените содержимое папки, из которой расширение загружено, файлами из папки SafeBridge в архиве.' }),
+      el('li', {}, 'Откройте ', el('code', { text: 'chrome://extensions' }), ' и нажмите у SafeBridge кнопку «Обновить» (круглая стрелка). Подписки и настройки сохранятся.')));
+
   return el('section', { id: 'helper' },
     el('h2', { text: 'Помощник и обновления' }),
     el('p', { class: 'lead', text: 'Помощник — программа на компьютере, которая держит соединение с сервером через ядро Xray. Браузер запускает её сам и останавливает при закрытии. Раз в сутки расширение проверяет обновления на GitHub.' }),
+    extCard,
     el('div', { class: 'card stack' },
       el('dl', { class: 'kv' }, items.map(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })])),
       installLink,
@@ -340,7 +358,7 @@ function removeCard(h) {
     el('div', { class: 'muted small', text: 'Удалит помощник и ядро Xray с компьютера и снимет регистрацию во всех браузерах. Подписки и списки сайтов в расширении останутся.' }),
     el('div', { class: 'row' },
       el('button', { class: 'btn danger', disabled: busy.uninstallHelper, onclick: async () => {
-        if (!confirm('Удалить помощник VlessBridge с компьютера? VPN в браузере перестанет работать, пока вы не установите его снова.')) return;
+        if (!confirm('Удалить помощник SafeBridge с компьютера? VPN в браузере перестанет работать, пока вы не установите его снова.')) return;
         const r = await act('uninstallHelper', {}, 'uninstallHelper');
         if (r) helperRemoved = true;
         render();
