@@ -90,7 +90,7 @@ function bridgeCard(servers) {
   const cls = 'bridge' + (active ? ' on' : problem ? ' problem' : '') + (active && wasActive === false ? ' just-on' : '');
   wasActive = active;
   const stateText = pendingAction === 'toggle' ? (state.enabled ? 'Отключаю…' : 'Подключаю…')
-    : active ? 'Подключено' : problem ? 'Нет соединения' : 'Выключено';
+    : active ? 'Подключено' : problem ? (state.killSwitch ? 'Нет соединения — сайты заблокированы' : 'Нет соединения — сайты идут напрямую') : 'Выключено';
   const ms = sel ? state.pings[sel.id] : null;
   return el('button', {
     class: cls, role: 'switch', 'aria-checked': String(!!state.enabled),

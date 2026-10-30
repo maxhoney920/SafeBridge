@@ -79,6 +79,7 @@ export const DEFAULTS = {
   intervalMin: 120,    // автообновление подписок
   pingUrl: 'https://www.gstatic.com/generate_204',
   webrtc: true,        // защищать от утечки IP через WebRTC в режиме «все сайты»
+  killSwitch: true,    // если VPN включён, но соединения нет — не пускать сайты напрямую
   port: 0,             // предпочтительный локальный порт (0 — любой свободный)
   autoCore: true,      // обновлять ядро Xray автоматически
   updates: null,       // результат последней проверки обновлений

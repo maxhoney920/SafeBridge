@@ -32,7 +32,15 @@ fetch_core() { # goos goarch -> путь к бинарнику xray
   local arc="$CACHE/$name.zip"
   if [ ! -f "$arc" ]; then
     echo "  ↓ $name.zip" >&2
-    curl -fsSL -o "$arc.part" "https://github.com/XTLS/Xray-core/releases/download/v$XRAY_VERSION/$name.zip"
+    url="https://github.com/XTLS/Xray-core/releases/download/v$XRAY_VERSION/$name.zip"
+    curl -fsSL -o "$arc.part" "$url"
+    # сверяем SHA-256 с официальным файлом контрольных сумм XTLS
+    want=$(curl -fsSL "$url.dgst" | sed -n 's/^SHA2-256= *//p' | tr -d '[:space:]')
+    got=$(sha256sum "$arc.part" | cut -d' ' -f1)
+    if [ -z "$want" ] || [ "$want" != "$got" ]; then
+      echo "  ✗ контрольная сумма $name.zip не совпала (ожидалось ${want:-?}, получено $got)" >&2
+      rm -f "$arc.part"; exit 1
+    fi
     mv "$arc.part" "$arc"
   fi
   local out="$CACHE/$name/$bin"

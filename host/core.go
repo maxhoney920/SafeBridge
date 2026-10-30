@@ -212,7 +212,6 @@ var privateCIDRs = []string{"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0
 
 type coreLayout struct {
 	port     int
-	apiPort  int
 	testPort map[string]int // сервер → локальный SOCKS-порт для пинга
 	tags     []string
 	selected string
@@ -246,18 +245,11 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 	inbounds := []any{
 		map[string]any{"tag": "main", "listen": "127.0.0.1", "port": l.port, "protocol": "socks",
 			"settings": map[string]any{"auth": "noauth", "udp": true}},
-		map[string]any{"tag": "api", "listen": "127.0.0.1", "port": l.apiPort, "protocol": "dokodemo-door",
-			"settings": map[string]any{"address": "127.0.0.1"}},
 	}
-	rules := []any{
-		map[string]any{"inboundTag": []string{"api"}, "outboundTag": "api"},
-	}
+	rules := []any{}
 	var outbounds []any
 	for _, s := range servers {
-		ob := map[string]any{}
-		for k, v := range s.Outbound {
-			ob[k] = v
-		}
+		ob := sanitizeOutbound(s.Outbound)
 		ob["tag"] = s.ID
 		outbounds = append(outbounds, ob)
 		if tp := l.testPort[s.ID]; tp > 0 {
@@ -271,18 +263,15 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 	rules = append(rules,
 		map[string]any{"ip": privateCIDRs, "outboundTag": "direct"},
 		map[string]any{"domain": []string{"localhost"}, "outboundTag": "direct"},
-		map[string]any{"inboundTag": []string{"main"}, "balancerTag": balancerTag},
+		map[string]any{"inboundTag": []string{"main"}, "outboundTag": l.selected},
 	)
 	cfg := map[string]any{
 		"log":       map[string]any{"loglevel": "warning", "access": "none", "dnsLog": false},
-		"api":       map[string]any{"tag": "api", "services": []string{"RoutingService"}},
 		"inbounds":  inbounds,
 		"outbounds": outbounds,
 		"routing": map[string]any{
 			"domainStrategy": "AsIs",
-			// fallbackTag требует observatory, поэтому выбор задаётся сразу после запуска через `api bo`
-			"balancers": []any{map[string]any{"tag": balancerTag, "selector": l.tags}},
-			"rules":     rules,
+			"rules":          rules,
 		},
 	}
 	return json.MarshalIndent(cfg, "", "  ")
@@ -398,11 +387,11 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 	c.mu.Lock()
 	running := c.cmd != nil
 	same := !force && running && c.hash == hash && (preferredPort <= 0 || preferredPort == c.layout.port)
+	sameSel := c.layout.selected == selected || !contains(c.layout.tags, selected)
 	prevPort := c.layout.port
 	c.mu.Unlock()
-	if same {
-		err := c.Select(selected)
-		return c.Status(), err
+	if same && sameSel {
+		return c.Status(), nil
 	}
 	if len(servers) == 0 {
 		return c.Status(), errors.New("нет поддерживаемых серверов")
@@ -420,7 +409,7 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 	case prevPort > 0 && portFree(prevPort):
 		port = prevPort
 	}
-	need := len(servers) + 1
+	need := len(servers)
 	if port == 0 {
 		need++
 	}
@@ -431,9 +420,9 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 	if port == 0 {
 		port, ports = ports[0], ports[1:]
 	}
-	l := coreLayout{port: port, apiPort: ports[0], testPort: map[string]int{}, selected: selected}
+	l := coreLayout{port: port, testPort: map[string]int{}, selected: selected}
 	for i, s := range servers {
-		l.testPort[s.ID] = ports[1+i]
+		l.testPort[s.ID] = ports[i]
 	}
 	cfg, err := buildConfig(servers, &l)
 	if err != nil {
@@ -504,8 +493,9 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 		}
 	}()
 
-	// ждём, пока поднимется API, и сразу закрепляем выбранный сервер
+	// ждём, пока ядро начнёт принимать соединения на основном порту
 	deadline := time.Now().Add(10 * time.Second)
+	addr := "127.0.0.1:" + strconv.Itoa(l.port)
 	for {
 		select {
 		case <-done:
@@ -513,14 +503,15 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 			return c.Status(), fmt.Errorf("Xray не запустился:\n%s", strings.Join(c.logs.tail(15), "\n"))
 		default:
 		}
-		if c.override(l.selected, 1) == nil {
+		if conn, err := net.DialTimeout("tcp", addr, 300*time.Millisecond); err == nil {
+			conn.Close()
 			break
 		}
 		if time.Now().After(deadline) {
 			c.Stop()
 			return c.Status(), errors.New("Xray не ответил за 10 секунд")
 		}
-		time.Sleep(150 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 	return c.Status(), nil
 }
@@ -544,29 +535,8 @@ func (c *Core) Stop() {
 	}
 }
 
-// override переключает балансировщик на сервер через `xray api bo`.
-func (c *Core) override(id string, timeoutSec int) error {
-	c.mu.Lock()
-	apiPort := c.layout.apiPort
-	c.mu.Unlock()
-	p, err := CorePath()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(p, "api", "bo", "--server=127.0.0.1:"+strconv.Itoa(apiPort),
-		"-t", strconv.Itoa(timeoutSec), "-b", balancerTag, id)
-	hideWindow(cmd)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		msg := strings.TrimSpace(string(out))
-		if msg == "" {
-			msg = err.Error()
-		}
-		return errors.New(msg)
-	}
-	return nil
-}
-
+// Select переключает сервер. Управляющего API у ядра нет (через него любая программа на
+// компьютере могла бы менять маршруты), поэтому ядро перезапускается с новым конфигом.
 func (c *Core) Select(id string) error {
 	if id == "" {
 		return errors.New("сервер не указан")
@@ -574,20 +544,19 @@ func (c *Core) Select(id string) error {
 	c.mu.Lock()
 	running := c.cmd != nil
 	known := contains(c.layout.tags, id)
+	last := c.last
 	c.mu.Unlock()
-	if !running {
+	if !running || last == nil {
 		return errors.New("ядро не запущено")
 	}
 	if !known {
 		return errors.New("сервер не найден в текущем наборе")
 	}
-	if err := c.override(id, 3); err != nil {
-		return err
-	}
 	c.mu.Lock()
-	c.layout.selected = id
+	c.last = &applyArgs{last.servers, id, last.preferredPort}
 	c.mu.Unlock()
-	return nil
+	_, err := c.apply(last.servers, id, last.preferredPort, true)
+	return err
 }
 
 // Delay измеряет время ответа testURL через конкретный сервер (через его тестовый SOCKS-порт).

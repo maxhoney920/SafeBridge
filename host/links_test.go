@@ -217,8 +217,8 @@ func TestParseSubscriptionXrayJSON(t *testing.T) {
 		res.Servers[0].Transport != "xhttp" || res.Servers[0].Address != "nl.example.com" || res.Servers[1].Port != 443 {
 		t.Fatalf("%+v %+v", res.Servers[0], res.Servers[1])
 	}
-	if jget(res.Servers[0].Outbound, "streamSettings", "sockopt", "dialerProxy") != nil {
-		t.Fatal("dialerProxy должен быть убран")
+	if jget(res.Servers[0].Outbound, "streamSettings", "sockopt") != nil {
+		t.Fatal("sockopt должен быть убран")
 	}
 	if _, err := ParseSubscription([]byte(`{"outbounds":[{"type":"vless","tag":"x"}]}`)); err == nil {
 		t.Fatal("sing-box JSON должен давать понятную ошибку")
@@ -228,36 +228,54 @@ func TestParseSubscriptionXrayJSON(t *testing.T) {
 func TestBuildConfig(t *testing.T) {
 	a := mustParse(t, "vless://u@a.com:443?security=tls#A")
 	b := mustParse(t, "trojan://p@c.com:443#C")
-	l := &coreLayout{port: 2080, apiPort: 9090, testPort: map[string]int{a.ID: 3001, b.ID: 3002}, selected: b.ID}
+	l := &coreLayout{port: 2080, testPort: map[string]int{a.ID: 3001, b.ID: 3002}, selected: b.ID}
 	cfg, err := buildConfig([]ApplyServer{{a.ID, a.Outbound}, {b.ID, b.Outbound}}, l)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var m map[string]any
 	json.Unmarshal(cfg, &m)
-	if bal := jget(m, "routing", "balancers", 0); len(jget(bal, "selector").([]any)) != 2 {
-		t.Fatalf("balancer: %v", bal)
+	if m["api"] != nil || jget(m, "routing", "balancers") != nil {
+		t.Fatal("у ядра не должно быть управляющего API")
 	}
-	if n := len(m["inbounds"].([]any)); n != 4 {
+	for _, in := range m["inbounds"].([]any) {
+		if jget(in, "listen") != "127.0.0.1" || jget(in, "protocol") != "socks" {
+			t.Fatalf("лишний или открытый наружу вход: %v", in)
+		}
+	}
+	if n := len(m["inbounds"].([]any)); n != 3 {
 		t.Fatalf("inbounds=%d", n)
 	}
 	rules := jget(m, "routing", "rules").([]any)
-	if jget(rules[len(rules)-1], "balancerTag") != balancerTag {
-		t.Fatal("последнее правило — балансировщик")
+	if jget(rules[len(rules)-1], "outboundTag") != b.ID {
+		t.Fatal("основной вход должен идти на выбранный сервер")
 	}
 }
 
-func TestCompareVersions(t *testing.T) {
-	cases := []struct {
-		a, b string
-		want int
-	}{
-		{"26.10.21", "26.9.30", 1}, {"v26.9.30", "26.9.30", 0}, {"0.2.0", "0.10.0", -1},
-		{"", "26.9.30", -1}, {"dev", "0.1.0", -1}, {"1.2", "1.2.0", 0},
+func TestSanitizeMaliciousSubscription(t *testing.T) {
+	js := `[{"remarks":"evil","outbounds":[{"tag":"proxy","protocol":"trojan","sendThrough":"1.2.3.4",
+	  "settings":{"servers":[{"address":"e.com","port":443,"password":"p"}]},
+	  "streamSettings":{"network":"raw","security":"tls","sockopt":{"interface":"eth0"},
+	    "tlsSettings":{"serverName":"e.com","masterKeyLog":"/home/u/.bashrc",
+	      "certificates":[{"certificateFile":"/etc/shadow","usage":"verify"}]}}}]}]`
+	res, err := ParseSubscription([]byte(js))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, c := range cases {
-		if got := compareVersions(c.a, c.b); got != c.want {
-			t.Errorf("compareVersions(%q,%q)=%d, want %d", c.a, c.b, got, c.want)
+	b, _ := json.Marshal(res.Servers[0].Outbound)
+	for _, bad := range []string{"masterKeyLog", "bashrc", "certificate", "shadow", "sockopt", "sendThrough"} {
+		if strings.Contains(string(b), bad) {
+			t.Fatalf("в outbound осталось %q: %s", bad, b)
 		}
+	}
+	if jget(res.Servers[0].Outbound, "streamSettings", "tlsSettings", "serverName") != "e.com" {
+		t.Fatal("нужные поля должны остаться")
+	}
+	// и при запуске ядра — даже если опасный outbound пришёл из старых данных расширения
+	l := &coreLayout{port: 1, testPort: map[string]int{}}
+	cfg, _ := buildConfig([]ApplyServer{{"s1", map[string]any{"protocol": "trojan",
+		"streamSettings": map[string]any{"tlsSettings": map[string]any{"masterKeyLog": "/tmp/x"}}}}}, l)
+	if strings.Contains(string(cfg), "masterKeyLog") {
+		t.Fatal("buildConfig должен чистить outbound")
 	}
 }

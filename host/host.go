@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sync"
 	"time"
@@ -125,12 +126,17 @@ func (h *Host) handle(req request) {
 	}()
 	res, err := h.dispatch(req)
 	if err != nil {
-		log.Printf("%s: %v", req.Cmd, err)
+		log.Printf("%s: %v", req.Cmd, redactURLs(err.Error()))
 		h.send(response{ID: req.ID, Error: err.Error()})
 		return
 	}
 	h.send(response{ID: req.ID, OK: true, Result: res})
 }
+
+// ссылки подписок содержат личный токен — в журнал на диске они не пишутся
+var urlRe = regexp.MustCompile(`https?://[^\s"']+`)
+
+func redactURLs(s string) string { return urlRe.ReplaceAllString(s, "<ссылка>") }
 
 func (h *Host) proxyPort() int {
 	if st := h.core.Status(); st.Running {

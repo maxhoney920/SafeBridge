@@ -75,6 +75,7 @@ function subsSection() {
           busy['r' + sub.id] ? spin() : 'Обновить'),
         el('button', { class: 'btn danger', onclick: () => confirm(`Удалить подписку «${sub.name}»?`) && act('removeSub', { id: sub.id }, 'rm', 'Подписка удалена'), text: 'Удалить' })),
       el('div', { class: 'facts' }, facts),
+      /^http:\/\//i.test(sub.url) && !/^http:\/\/(127\.|localhost)/i.test(sub.url) && el('div', { class: 'notice', text: 'Ссылка без https: по дороге её содержимое можно подменить и подсунуть чужие серверы. Попросите у VPN-сервиса ссылку, которая начинается с https://.' }),
       sub.error && el('div', { class: 'notice', text: `Последнее обновление не удалось: ${sub.error}` }),
       errors['r' + sub.id] && el('div', { class: 'notice', text: errors['r' + sub.id] }));
   });
@@ -185,14 +186,18 @@ function settingsSection() {
   const ping = el('input', { class: 'input', id: 'pingUrl', type: 'url', value: state.pingUrl });
   const port = el('input', { class: 'input', id: 'port', type: 'number', min: 0, max: 65535, value: state.port || '', placeholder: 'любой свободный' });
   const webrtc = el('input', { type: 'checkbox', id: 'webrtc', checked: state.webrtc });
+  const kill = el('input', { type: 'checkbox', id: 'killSwitch', checked: state.killSwitch });
   const saveAll = () => act('saveSettings', { settings: {
-    intervalMin: Number(interval.value), pingUrl: ping.value, port: Number(port.value) || 0, webrtc: webrtc.checked,
+    intervalMin: Number(interval.value), pingUrl: ping.value, port: Number(port.value) || 0, webrtc: webrtc.checked, killSwitch: kill.checked,
   } }, 'settings', 'Параметры сохранены');
   return el('section', { id: 'settings' },
     el('h2', { text: 'Параметры' }),
     el('div', { class: 'card' },
       el('div', { class: 'field' }, el('label', { for: 'interval', text: 'Обновлять подписки' }), interval,
         el('div', { class: 'hint', text: 'Обновить вручную можно кнопкой «Обновить» в окне расширения.' })),
+      el('div', { class: 'field' }, el('label', { for: 'killSwitch', text: 'Если VPN пропал' }),
+        el('label', { class: 'check' }, kill, el('span', { text: 'Не открывать сайты напрямую' })),
+        el('div', { class: 'hint', text: 'Пока VPN включён, но соединения с сервером нет, сайты, которые должны идти через VPN, не откроются — вместо того чтобы тихо открыться с вашего настоящего адреса.' })),
       el('div', { class: 'field' }, el('label', { for: 'webrtc', text: 'Защита от утечки IP' }),
         el('label', { class: 'check' }, webrtc, el('span', { text: 'Пускать WebRTC только через VPN' })),
         el('div', { class: 'hint', text: 'Работает в режиме «Все сайты». Без неё сайты могут увидеть ваш настоящий IP через звонки и WebRTC.' })),
@@ -296,7 +301,7 @@ function render() {
   const sel = active && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
   const ta = active?.tagName === 'TEXTAREA' ? active.getAttribute('aria-label') : null;
   const newSub = document.getElementById('newSub')?.value;
-  const settingsDraft = ['interval', 'pingUrl', 'port', 'webrtc'].map((id) => {
+  const settingsDraft = ['interval', 'pingUrl', 'port', 'webrtc', 'killSwitch'].map((id) => {
     const e = document.getElementById(id);
     return e && [id, e.type === 'checkbox' ? e.checked : e.value];
   }).filter(Boolean);

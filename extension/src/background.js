@@ -170,34 +170,35 @@ if (isFirefox) {
     if (isLocalHost(host)) return { type: 'direct' };
     const listed = !!domainMatches(host, r.list);
     const via = r.mode === 'include' ? listed : r.mode === 'exclude' ? !listed : true;
-    return via ? { type: 'socks', host: '127.0.0.1', port: r.port, proxyDNS: true } : { type: 'direct' };
+    // запасного варианта нет: если ядро недоступно, запрос не уйдёт «напрямую» мимо VPN
+    return via ? { type: 'socks', host: '127.0.0.1', port: r.port, proxyDNS: true, failoverTimeout: 1 } : { type: 'direct' };
   }, { urls: ['<all_urls>'] });
   ext.proxy.onError.addListener((e) => console.warn('proxy:', e?.message || e));
 }
 
+// Порт, на котором заведомо никто не слушает: прокси «в никуда» блокирует сайты,
+// когда VPN включён, но соединения с ним нет (kill switch).
+const BLOCK_PORT = 1;
+
 async function applyProxy() {
   const st = await load();
   const active = st.enabled && core.running && core.port > 0;
+  const blocked = st.enabled && !active && st.killSwitch;
+  const port = active ? core.port : BLOCK_PORT;
   try {
     if (isFirefox) {
-      ffRule = active ? { port: core.port, mode: st.mode, list: st.mode === 'include' ? st.include : st.mode === 'exclude' ? st.exclude : [] } : null;
-      if (active && st.webrtc && st.mode === 'all') {
-        await ext.privacy.network.webRTCIPHandlingPolicy.set({ value: 'disable_non_proxied_udp' });
-      } else {
-        await ext.privacy.network.webRTCIPHandlingPolicy.clear({});
-      }
-    } else if (active) {
+      ffRule = active || blocked ? { port, mode: st.mode, list: st.mode === 'include' ? st.include : st.mode === 'exclude' ? st.exclude : [] } : null;
+    } else if (active || blocked) {
       await ext.proxy.settings.set({
-        value: { mode: 'pac_script', pacScript: { data: buildPac(st, core.port, core.selected) } },
+        value: { mode: 'pac_script', pacScript: { data: buildPac(st, port, active ? core.selected : 'blocked') } },
         scope: 'regular',
       });
-      if (st.webrtc && st.mode === 'all') {
-        await ext.privacy.network.webRTCIPHandlingPolicy.set({ value: 'disable_non_proxied_udp' });
-      } else {
-        await ext.privacy.network.webRTCIPHandlingPolicy.clear({});
-      }
     } else {
       await ext.proxy.settings.clear({ scope: 'regular' });
+    }
+    if ((active || blocked) && st.webrtc && st.mode === 'all') {
+      await ext.privacy.network.webRTCIPHandlingPolicy.set({ value: 'disable_non_proxied_udp' });
+    } else {
       await ext.privacy.network.webRTCIPHandlingPolicy.clear({});
     }
   } catch (e) {
@@ -544,6 +545,7 @@ const handlers = {
       patch.pingUrl = u;
     }
     if (settings.webrtc != null) patch.webrtc = !!settings.webrtc;
+    if (settings.killSwitch != null) patch.killSwitch = !!settings.killSwitch;
     if (settings.port != null) {
       const p = Number(settings.port) || 0;
       if (p && (p < 1024 || p > 65535)) throw new Error('Порт должен быть от 1024 до 65535 или 0');

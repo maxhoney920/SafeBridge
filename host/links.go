@@ -638,13 +638,7 @@ func serversFromXrayJSON(b []byte) ([]*Server, error) {
 				continue
 			}
 			tag, _ := ob["tag"].(string)
-			delete(ob, "tag")
-			delete(ob, "proxySettings")
-			if ss, ok := ob["streamSettings"].(map[string]any); ok {
-				if so, ok := ss["sockopt"].(map[string]any); ok {
-					delete(so, "dialerProxy")
-				}
-			}
+			ob = sanitizeOutbound(ob)
 			name := remarks
 			if name == "" || (len(obs) > 1 && tag != "" && tag != "proxy") {
 				name = nonEmpty(tag, remarks)
