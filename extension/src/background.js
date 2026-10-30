@@ -329,7 +329,12 @@ async function scheduleRefresh() {
 // {сайт}/ext/done#token=…&nonce=…, где скрипт account-done.js передаёт токен сюда.
 // Ключи берём из {сайт}/api/ext/keys и держим подписки из аккаунта в актуальном виде.
 
-const accountSite = (st) => (st.accountSite || ACCOUNT.site).replace(/\/+$/, '');
+// Другой адрес сайта — только локальный, для проверки: токен аккаунта не должен уйти
+// на чужой сайт, даже если кто-то подменит настройки расширения.
+const accountSite = (st) => {
+  const alt = st.accountSite || '';
+  return (/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(alt) ? alt : ACCOUNT.site).replace(/\/+$/, '');
+};
 
 function randomNonce() {
   const b = crypto.getRandomValues(new Uint8Array(24));
@@ -590,6 +595,8 @@ async function getState() {
   }
   return {
     ...st,
+    // токен аккаунта нужен только фону — окнам расширения его не отдаём
+    account: st.account ? { ...st.account, token: undefined } : null,
     host: hostInfo,
     hostError,
     hostMissing: !hostInfo && isMissingHost(hostError),
@@ -748,7 +755,10 @@ const handlers = {
 
   async updateSub({ id, patch }) {
     const st = await load();
-    const subs = st.subs.map((s) => (s.id === id ? { ...s, ...patch, customName: patch.name ? true : s.customName } : s));
+    // менять можно только имя: адрес, серверы и признак «из аккаунта» правит сам фон
+    const name = String(patch?.name ?? '').trim().slice(0, 100);
+    if (!name) throw new Error('Пустое имя');
+    const subs = st.subs.map((s) => (s.id === id ? { ...s, name, customName: true } : s));
     await save({ subs });
     return getState();
   },
@@ -862,9 +872,18 @@ const handlers = {
   },
 };
 
+// Сообщения принимаем только от самого расширения. Его страницы (окно, настройки) могут
+// всё, а скрипт на странице сайта аккаунта (account-done.js) — только сообщить итог входа.
+const fromContentScript = new Set(['accountDone']);
+const extOrigin = ext.runtime.getURL('');
 ext.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const h = handlers[msg?.type];
   if (!h) return false;
+  const ownPage = sender?.id === ext.runtime.id && typeof sender.url === 'string' && sender.url.startsWith(extOrigin);
+  if (sender?.id !== ext.runtime.id || (!ownPage && !fromContentScript.has(msg.type))) {
+    sendResponse({ ok: false, error: 'Нет доступа' });
+    return false;
+  }
   h(msg, sender)
     .then((result) => sendResponse({ ok: true, result }))
     .catch((e) => sendResponse({ ok: false, error: e.message }));

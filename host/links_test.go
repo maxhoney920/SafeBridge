@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -277,5 +281,49 @@ func TestSanitizeMaliciousSubscription(t *testing.T) {
 		"streamSettings": map[string]any{"tlsSettings": map[string]any{"masterKeyLog": "/tmp/x"}}}}}, l)
 	if strings.Contains(string(cfg), "masterKeyLog") {
 		t.Fatal("buildConfig должен чистить outbound")
+	}
+}
+
+func TestVerifyLatest(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	body := []byte(`{"version":"9.9.9","files":{}}`)
+	good := base64.StdEncoding.EncodeToString(ed25519.Sign(priv, body))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/good/latest.json.sig":
+			w.Write([]byte(good + "\n"))
+		case "/bad/latest.json.sig":
+			w.Write([]byte(base64.StdEncoding.EncodeToString(make([]byte, 64))))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	oldBase, oldKey := updateBase, updatePubKey
+	defer func() { updateBase, updatePubKey = oldBase, oldKey }()
+	updatePubKey = base64.StdEncoding.EncodeToString(pub)
+	ctx := context.Background()
+	updateBase = srv.URL + "/good/"
+	if err := verifyLatest(ctx, body, "", 0); err != nil {
+		t.Fatalf("верная подпись отклонена: %v", err)
+	}
+	if err := verifyLatest(ctx, append(body, ' '), "", 0); err == nil {
+		t.Fatal("изменённый latest.json принят")
+	}
+	updateBase = srv.URL + "/bad/"
+	if err := verifyLatest(ctx, body, "", 0); err == nil {
+		t.Fatal("чужая подпись принята")
+	}
+	updateBase = srv.URL + "/none/"
+	if err := verifyLatest(ctx, body, "", 0); err == nil {
+		t.Fatal("отсутствие подписи принято")
+	}
+	for _, n := range []string{"../x", "a/b", "x?y=1", ".hidden", "", "//evil.com/x"} {
+		if safeFileName(n) {
+			t.Fatalf("имя %q принято", n)
+		}
+	}
+	if !safeFileName("safebridge-linux-amd64") {
+		t.Fatal("нормальное имя отклонено")
 	}
 }

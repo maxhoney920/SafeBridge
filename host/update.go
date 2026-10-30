@@ -4,7 +4,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -25,6 +27,9 @@ import (
 var (
 	// откуда брать latest.json и новые версии помощника (ветка downloads репозитория)
 	updateBase = "https://raw.githubusercontent.com/maxhoney920/SafeBridge/downloads/"
+	// открытый ключ ed25519, которым CI подписывает latest.json (latest.json.sig).
+	// Пустой — подпись не проверяется (только для сборок разработчика).
+	updatePubKey = "LUl1+Ht0rVjVYOcryvMZqrWJpybkDRyiD3nALSSZYPs="
 	// версия Xray, встроенная в эту сборку помощника
 	bundledXray = ""
 )
@@ -148,16 +153,73 @@ type UpdateInfo struct {
 
 func platformKey() string { return runtime.GOOS + "-" + runtime.GOARCH }
 
+// fetchLatestHelper загружает latest.json и проверяет его подпись ed25519. Без верной
+// подписи хешам из файла не доверяем: иначе тот, кто подменит файлы в ветке downloads
+// (или по дороге к ней), подсунул бы свой помощник вместе с подходящим хешем.
 func fetchLatestHelper(ctx context.Context, proxyPort int) (*latestInfo, error) {
-	b, err := download(ctx, updateBase+"latest.json?t="+strconv.FormatInt(time.Now().Unix(), 10), 1<<20, proxyPort)
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			// сразу после публикации CDN GitHub может отдать файл и подпись разных версий
+			select {
+			case <-time.After(3 * time.Second):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		bust := "?t=" + strconv.FormatInt(time.Now().UnixNano(), 10)
+		b, err := download(ctx, updateBase+"latest.json"+bust, 1<<20, proxyPort)
+		if err != nil {
+			return nil, err
+		}
+		if err := verifyLatest(ctx, b, bust, proxyPort); err != nil {
+			lastErr = err
+			continue
+		}
+		var li latestInfo
+		if err := json.Unmarshal(b, &li); err != nil {
+			return nil, errors.New("latest.json повреждён")
+		}
+		for _, f := range li.Files {
+			if !safeFileName(f.Name) {
+				return nil, errors.New("latest.json: недопустимое имя файла")
+			}
+		}
+		return &li, nil
+	}
+	return nil, lastErr
+}
+
+func verifyLatest(ctx context.Context, body []byte, bust string, proxyPort int) error {
+	if updatePubKey == "" {
+		return nil
+	}
+	pub, err := base64.StdEncoding.DecodeString(updatePubKey)
+	if err != nil || len(pub) != ed25519.PublicKeySize {
+		return errors.New("неверный ключ проверки обновлений в сборке")
+	}
+	s, err := download(ctx, updateBase+"latest.json.sig"+bust, 4<<10, proxyPort)
 	if err != nil {
-		return nil, err
+		return errors.New("обновление не подписано — не устанавливаю")
 	}
-	var li latestInfo
-	if err := json.Unmarshal(b, &li); err != nil {
-		return nil, errors.New("latest.json повреждён")
+	sig, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(s)))
+	if err != nil || !ed25519.Verify(ed25519.PublicKey(pub), body, sig) {
+		return errors.New("подпись обновления не совпала — не устанавливаю")
 	}
-	return &li, nil
+	return nil
+}
+
+// safeFileName — только имя файла из ветки downloads, без путей и параметров.
+func safeFileName(n string) bool {
+	if n == "" || len(n) > 100 || strings.HasPrefix(n, ".") {
+		return false
+	}
+	for _, c := range n {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // latestXray узнаёт последнюю стабильную версию Xray: через API GitHub,

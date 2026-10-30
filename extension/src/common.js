@@ -283,7 +283,8 @@ export function relatedDomains(hosts, tabHost, list) {
     const d = SHARED.includes(base) ? h : base;
     out.set(d, (out.get(d) || 0) + 1);
   }
-  return [...out.entries()].sort((a, b) => b[1] - a[1]).map(([d]) => d);
+  // не больше 30: страница может нарочно загрузить что угодно, чтобы подсунуть длинный список
+  return [...out.entries()].sort((a, b) => b[1] - a[1]).map(([d]) => d).slice(0, 30);
 }
 
 // Режимы и списки — одни и те же слова в окне расширения и в настройках.

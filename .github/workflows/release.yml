@@ -32,6 +32,18 @@ jobs:
           REPO: ${{ github.repository }}
         run: ./build.sh
 
+      # Подпись latest.json ключом ed25519 (секрет UPDATE_SIGNING_KEY). Помощник ставит
+      # обновление только с верной подписью, поэтому без секрета обновления помощника не пройдут.
+      - name: Sign latest.json
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          if [ -z "$UPDATE_SIGNING_KEY" ]; then
+            echo "::error title=UPDATE_SIGNING_KEY::Секрет UPDATE_SIGNING_KEY не задан — latest.json не подписан, помощники не смогут обновиться"
+            exit 0
+          fi
+          cd host && go run ./tools/signlatest sign ../dist/latest.json
+
       # Подпись дополнения для Firefox на addons.mozilla.org (скрытое, «unlisted»).
       # Нужны секреты AMO_JWT_ISSUER и AMO_JWT_SECRET. Версию можно подписать только один раз,
       # поэтому уже подписанный файл этой версии берётся из ветки downloads.

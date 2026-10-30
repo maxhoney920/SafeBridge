@@ -11,7 +11,7 @@
     }
   },
   "permissions": ["proxy", "storage", "alarms", "nativeMessaging", "privacy", "tabs", "<all_urls>"],
-  "content_scripts": [{ "matches": ["https://tapp.internet-safe.online/ext/done*"], "js": ["src/account-done.js"], "run_at": "document_idle" }],
+  "content_scripts": [{ "matches": ["https://tapp.internet-safe.online/ext/done*"], "js": ["src/account-done.js"], "run_at": "document_start" }],
   "background": { "page": "background.html" },
   "browser_action": {
     "default_popup": "popup.html",

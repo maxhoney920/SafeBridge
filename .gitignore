@@ -2,3 +2,7 @@ dist/
 .cache/
 host/core/
 keys/*.pem
+
+# ключи и секреты в репозиторий не кладём
+keys/
+*.pem
