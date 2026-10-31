@@ -6,3 +6,4 @@ keys/*.pem
 # ключи и секреты в репозиторий не кладём
 keys/
 *.pem
+host/rsrc_*.syso

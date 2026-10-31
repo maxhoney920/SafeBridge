@@ -50,6 +50,20 @@ fetch_core() { # goos goarch -> путь к бинарнику xray
   echo "$out"
 }
 
+# Сведения о программе для Windows (название, версия, автор, значок, манифест asInvoker):
+# без них неподписанный exe выглядит для антивирусов подозрительнее. Нужен go-winres
+# (go install github.com/tc-hib/go-winres@v0.3.3); если его нет — exe соберётся без сведений.
+WINRES="${WINRES:-$(command -v go-winres || true)}"
+rm -f host/rsrc_windows_*.syso
+if [ -n "$WINRES" ]; then
+  winver="$VERSION"; while [ "$(printf '%s' "$winver" | tr -cd . | wc -c)" -lt 3 ]; do winver="$winver.0"; done
+  (cd host && "$WINRES" make --in winres/winres.json --arch amd64,arm64 --out rsrc \
+    --product-version "$winver" --file-version "$winver")
+  echo "✓ сведения о программе для Windows ($winver)"
+else
+  echo "! go-winres не найден — exe для Windows без сведений о программе" >&2
+fi
+
 for t in "${TARGETS[@]}"; do
   os=${t%/*}; arch=${t#*/}
   echo "▶ $os/$arch (Xray $XRAY_VERSION)"
@@ -71,7 +85,7 @@ for t in "${TARGETS[@]}"; do
     echo "  ✓ $DIST/safebridge-macos-$arch.zip"
   fi
 done
-rm -f host/core/xray.gz
+rm -f host/core/xray.gz host/rsrc_windows_*.syso
 
 # latest.json — по нему помощник узнаёт о новой версии и проверяет SHA-256 при обновлении
 python3 - "$DIST" "$VERSION" "$XRAY_VERSION" <<'PY'
