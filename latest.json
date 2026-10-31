@@ -1,0 +1,35 @@
+{
+  "version": "0.6.3",
+  "xray": "26.9.30",
+  "files": {
+    "darwin-amd64": {
+      "name": "safebridge-darwin-amd64",
+      "sha256": "088d848bc95fa05e7740f9e96d2d1cece3dcab78673ef757916a3b257a0e5165"
+    },
+    "darwin-arm64": {
+      "name": "safebridge-darwin-arm64",
+      "sha256": "79ecf08e01b1c79e1342cc36df3ea2db3e23e71e704d1a4aa3415f9563aebf34"
+    },
+    "linux-amd64": {
+      "name": "safebridge-linux-amd64",
+      "sha256": "fbb8aedd3b96b93100b76a4ac63709b448dac3d3df64d76de931b13ca14f2a30"
+    },
+    "linux-arm64": {
+      "name": "safebridge-linux-arm64",
+      "sha256": "54255e20cc755adbb7f9af30bdbb24ea819b23976e873135bdaad39d9f6fa979"
+    },
+    "windows-amd64": {
+      "name": "safebridge-windows-amd64.exe",
+      "sha256": "8d6e8014598bb0c0351d0733967e4323015b9357bfa716f38696b58bb361d494"
+    },
+    "windows-arm64": {
+      "name": "safebridge-windows-arm64.exe",
+      "sha256": "add5a622c0c124ff5d02effef66133ce4eb3f2bcf146ec42e8a3206aed769321"
+    }
+  },
+  "extension": {
+    "version": "0.6.3",
+    "name": "safebridge-extension-0.6.3.zip",
+    "sha256": "a242eb21a435b7641cc94b99399bbf4c24c3101f514d17882e6639c24e995558"
+  }
+}
