@@ -21,6 +21,7 @@
   --warn: #8a5a00;
   --bad: #c23b3b;
   --bad-soft: #fbeaea;
+  --scroll: #c3cad3;
   --radius-lg: 14px;
   --radius-sm: 8px;
   color-scheme: light;
@@ -45,12 +46,22 @@
     --warn: #e8b04a;
     --bad: #ef7676;
     --bad-soft: #3a1f22;
+    --scroll: #3a4654;
     color-scheme: dark;
   }
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+
+/* полосы прокрутки: тонкие, в цветах темы (Firefox и Chrome 121+ — стандартные свойства,
+   старые Chromium — ::-webkit-scrollbar) */
+* { scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
+::-webkit-scrollbar-corner { background: transparent; }
 body {
   background: var(--bg);
   color: var(--ink);
