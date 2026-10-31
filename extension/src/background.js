@@ -1,6 +1,6 @@
 import { ext, isFirefox, action, sessionStore } from './compat.js';
 import { MIN_HELPER, versionLess } from './common.js';
-import { HOST_NAME, DEFAULTS, load, save, allServers, buildPac, normalizeDomain, domainMatches, ACCOUNT, LATEST_URL, DOWNLOAD_BASE } from './common.js';
+import { HOST_NAME, DEFAULTS, load, save, allServers, buildPac, normalizeDomain, domainMatches, ACCOUNT, LATEST_URL, DOWNLOAD_BASE, upgradePresets } from './common.js';
 
 // ---------- связь с помощником ----------
 
@@ -570,6 +570,10 @@ let ready = null;
 async function init() {
   await scheduleRefresh();
   await scheduleUpdates();
+  // дополнить уже добавленные наборы сайтов адресами из новой версии (например, Gemini)
+  const before = await load();
+  const extra = upgradePresets(before.include);
+  if (extra.length) await save({ include: [...before.include, ...extra] });
   const st = await load();
   await applyCore();
   const period = Math.max(15, st.intervalMin) * 60000;

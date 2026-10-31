@@ -225,7 +225,17 @@ export const PRESETS_VPN = [
   { name: 'Discord', domains: ['discord.com', 'discord.gg', 'discordapp.com', 'discordapp.net', 'discord.media', 'discordcdn.com'] },
   { name: 'ChatGPT', domains: ['chatgpt.com', 'openai.com', 'oaistatic.com', 'oaiusercontent.com', 'sora.com'] },
   { name: 'Claude', domains: ['claude.ai', 'anthropic.com', 'claudeusercontent.com', 'claude.com'] },
-  { name: 'Gemini', domains: ['gemini.google.com', 'aistudio.google.com', 'generativelanguage.googleapis.com', 'notebooklm.google.com'] },
+  // Gemini, AI Studio, NotebookLM и другие сервисы Google AI. Страница открывается с gemini.google.com,
+  // а сами ответы идут через служебные адреса *-pa.googleapis.com и *.clients6.google.com:
+  // без них Google видит настоящий адрес и пишет, что сервис в вашей стране недоступен.
+  // Список сверен с v2fly/domain-list-community (google-deepmind) и itdoginfo/allow-domains.
+  { name: 'Gemini', main: ['gemini.google.com', 'aistudio.google.com', 'gemini.google', 'notebooklm.google.com', 'notebooklm.google', 'labs.google', 'ai.google.dev'],
+    domains: ['gemini.google.com', 'aistudio.google.com', 'gemini.google', 'bard.google.com', 'gemini.gstatic.com',
+      'generativelanguage.googleapis.com', 'robinfrontend-pa.googleapis.com', 'proactivebackend-pa.googleapis.com',
+      'geller-pa.googleapis.com', 'aisandbox-pa.googleapis.com', 'aida.googleapis.com', 'speechs3proto2-pa.googleapis.com',
+      'clients6.google.com', 'makersuite.google.com', 'ai.google.dev', 'ai.studio', 'generativeai.google',
+      'notebooklm.google.com', 'notebooklm.google', 'notebooklm-pa.googleapis.com', 'notebooklm.googleapis.com',
+      'labs.google', 'labs.google.com', 'jules.google', 'jules.google.com', 'deepmind.google', 'deepmind.com'] },
   { name: 'TikTok', domains: ['tiktok.com', 'tiktokcdn.com', 'tiktokv.com', 'ttwstatic.com', 'byteoversea.com', 'ibytedtos.com', 'tiktokcdn-us.com', 'tiktokcdn-eu.com'] },
   { name: 'Twitch', domains: ['twitch.tv', 'ttvnw.net', 'jtvnw.net', 'twitchcdn.net', 'twitchsvc.net', 'ext-twitch.tv'] },
   { name: 'Spotify', domains: ['spotify.com', 'scdn.co', 'spotifycdn.com', 'spotilocal.com', 'pscdn.co'] },
@@ -255,9 +265,24 @@ export function presetFor(host, list) {
   const sets = list === 'exclude' ? PRESETS_DIRECT.filter((p) => p.service) : PRESETS_VPN;
   const h = host.toLowerCase();
   return sets.find((p) => {
-    const m = domainMatches(h, p.domains);
-    return m && p.domains.indexOf(m) < 2; // основной домен набора (первые два)
+    // основные адреса набора: p.main, а если его нет — первые два домена
+    const m = domainMatches(h, p.main || p.domains.slice(0, 2));
+    return !!m;
   }) || null;
+}
+
+// Наборы со временем пополняются. Если набор уже стоит в списке (есть его основной домен
+// и ещё хотя бы два его адреса), добавляем недостающие адреса из новой версии набора.
+export function upgradePresets(list, sets = PRESETS_VPN) {
+  const have = new Set(list);
+  const add = [];
+  for (const p of sets) {
+    const mains = p.main || p.domains.slice(0, 2);
+    const present = p.domains.filter((d) => have.has(d));
+    if (!mains.some((d) => have.has(d)) || present.length < 3) continue;
+    for (const d of p.domains) if (!have.has(d)) { have.add(d); add.push(d); }
+  }
+  return add;
 }
 
 // Домены, которые страница загружает со сторонних адресов (видео, картинки, API).
