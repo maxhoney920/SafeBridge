@@ -17,7 +17,12 @@ var (
 	extensionIDs = "mpmmjdhamocialllnfmcpkjealmekhpl"
 	// ID расширения в Firefox (browser_specific_settings.gecko.id)
 	firefoxIDs = "vlessbridge@safebridge"
+	// "win7" — сборка для Windows 7 (пропатченный Go от XTLS и ядро Xray-win7).
+	// Такой помощник обновляется только на сборку для Windows 7 и берёт ядро Xray-win7-*.
+	variant = ""
 )
+
+func isWin7Build() bool { return variant == "win7" }
 
 func homeDir() string {
 	h, err := os.UserHomeDir()

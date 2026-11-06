@@ -1,6 +1,6 @@
 # SafeBridge
 
-VPN для браузера по протоколу VLESS. Вы вставляете ссылку-подписку от своего VPN-сервиса, выбираете сервер и решаете, какие сайты открывать через VPN, а какие напрямую. Работает в Firefox, Chrome, Edge, Brave, Яндекс Браузере, Vivaldi и Chromium на Windows, macOS и Linux.
+VPN для браузера по протоколу VLESS. Вы вставляете ссылку-подписку от своего VPN-сервиса, выбираете сервер и решаете, какие сайты открывать через VPN, а какие напрямую. Работает в Firefox, Chrome, Edge, Brave, Яндекс Браузере, Vivaldi и Chromium на Windows (включая Windows 7), macOS и Linux.
 
 Через VPN идёт только браузер — остальные программы на компьютере работают как обычно.
 
@@ -79,6 +79,8 @@ Firefox из Flatpak помощника не видит: песочница Flat
 |---|---|---|
 | Windows | Intel / AMD | [safebridge-windows-amd64.exe](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-windows-amd64.exe) |
 | Windows | ARM (Snapdragon) | [safebridge-windows-arm64.exe](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-windows-arm64.exe) |
+| Windows 7 / 8 | 64 бита | [safebridge-windows7-amd64.exe](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-windows7-amd64.exe) |
+| Windows 7 / 8 / 10 | 32 бита | [safebridge-windows7-386.exe](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-windows7-386.exe) |
 | macOS | Apple Silicon (M1–M4) | [safebridge-macos-arm64.zip](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-macos-arm64.zip) |
 | macOS | Intel | [safebridge-macos-amd64.zip](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-macos-amd64.zip) |
 | Linux | x86-64 | [safebridge-linux-amd64](https://github.com/maxhoney920/SafeBridge/raw/downloads/safebridge-linux-amd64) |
@@ -90,6 +92,12 @@ Firefox из Flatpak помощника не видит: песочница Flat
 2. Если появится «Система Windows защитила ваш компьютер», нажмите «Подробнее», затем «Выполнить в любом случае». Предупреждение появляется потому, что у файла нет платной цифровой подписи.
 3. В окне появится отчёт об установке и слово «Готово». Нажмите Enter.
 4. Вернитесь в окно расширения и нажмите «Проверить».
+
+#### Windows 7 и 8, 32-битная Windows
+
+Обычный помощник на Windows 7 и 8 не запустится, для них есть отдельная сборка: `safebridge-windows7-amd64.exe` (64 бита) или `safebridge-windows7-386.exe` (32 бита, подходит и для 32-битной Windows 10). Расширение само предложит нужный файл. Ставится так же, как на Windows 10, и обновляется только на сборку для Windows 7.
+
+Браузеры для Windows 7: Chrome или Edge 109, Firefox 115 ESR, Яндекс Браузер, Supermium. Учтите, что Windows 7 и эти версии браузеров больше не получают обновлений безопасности.
 
 #### macOS
 

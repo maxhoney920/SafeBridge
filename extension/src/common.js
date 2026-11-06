@@ -13,7 +13,11 @@ export const DOWNLOAD_BASE = REPO_URL + '/raw/downloads/';
 export const HELPER_FILES = [
   { os: 'windows', name: 'Windows', variants: [
     { arch: 'amd64', label: 'Обычный компьютер (Intel / AMD)', file: 'safebridge-windows-amd64.exe' },
-    { arch: 'arm64', label: 'ARM (Snapdragon, Surface Pro X)', file: 'safebridge-windows-arm64.exe' }] },
+    { arch: 'arm64', label: 'ARM (Snapdragon, Surface Pro X)', file: 'safebridge-windows-arm64.exe' },
+    // Windows 7 и 8: обычный Go их не поддерживает, сборка на пропатченном Go от XTLS с ядром Xray-win7.
+    // 32-битная подходит и для 32-битной Windows 10.
+    { arch: 'win7-amd64', label: 'Windows 7 / 8 (64 бита)', file: 'safebridge-windows7-amd64.exe' },
+    { arch: 'win7-386', label: 'Windows 7 / 8 / 10 (32 бита)', file: 'safebridge-windows7-386.exe' }] },
   { os: 'darwin', name: 'macOS', variants: [
     { arch: 'arm64', label: 'Apple Silicon (M1–M4)', file: 'safebridge-macos-arm64.zip' },
     { arch: 'amd64', label: 'Intel', file: 'safebridge-macos-amd64.zip' }] },
@@ -89,7 +93,12 @@ export const INSTALL_CMD = `curl -fsSL ${DOWNLOAD_BASE}install.sh | sh`;
 // Шаги установки для каждой системы.
 export function installSteps(os, file) {
   return {
-    windows: [
+    windows: /windows7/.test(file || '') ? [
+      'Откройте скачанный файл.',
+      'Если появится «Не удаётся проверить издателя» или «Система Windows защитила ваш компьютер», нажмите «Запустить» (или «Подробнее» → «Выполнить в любом случае»).',
+      'Дождитесь слова «Готово» в окне и нажмите Enter.',
+      'Вернитесь в окно расширения и нажмите «Проверить».',
+    ] : [
       'Откройте скачанный файл.',
       'Если Windows покажет «Система Windows защитила ваш компьютер», нажмите «Подробнее», затем «Выполнить в любом случае».',
       'Дождитесь слова «Готово» в окне и нажмите Enter.',
@@ -109,10 +118,26 @@ export function installSteps(os, file) {
   }[os] || [];
 }
 
+// Windows 7 или 8? Chromium сообщает версию платформы в userAgentData: у Windows 10 и 11
+// она 10.0.0 и больше, у Windows 7 — 0.1.0, у 8 и 8.1 — 0.2.0 и 0.3.0. Firefox пишет её в userAgent.
+export async function detectOldWindows() {
+  try {
+    const uad = navigator.userAgentData;
+    if (uad?.getHighEntropyValues) {
+      const { platform, platformVersion } = await uad.getHighEntropyValues(['platformVersion']);
+      if (platform === 'Windows' && platformVersion) return parseInt(platformVersion, 10) < 1;
+    }
+  } catch {}
+  return /Windows NT 6\.[0-3]\b/.test(navigator.userAgent);
+}
+
 // Файл помощника для платформы браузера (ext.runtime.getPlatformInfo).
-export function helperDownload(p) {
-  const arch = p.arch === 'arm64' || p.arch === 'arm' ? 'arm64' : 'amd64';
+// oldWindows — Windows 7 или 8 (см. detectOldWindows): для них отдельная сборка помощника.
+export function helperDownload(p, oldWindows = false) {
+  let arch = p.arch === 'arm64' || p.arch === 'arm' ? 'arm64' : 'amd64';
   const os = { win: 'windows', mac: 'darwin', linux: 'linux' }[p.os];
+  if (os === 'windows' && p.arch === 'x86-32') arch = 'win7-386'; // 32-битный браузер или система
+  else if (os === 'windows' && oldWindows) arch = arch === 'arm64' ? 'arm64' : 'win7-amd64';
   const group = HELPER_FILES.find((g) => g.os === os);
   if (!group) return null;
   const v = group.variants.find((x) => x.arch === arch) || group.variants[0];

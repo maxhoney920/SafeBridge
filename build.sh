@@ -11,6 +11,8 @@
 #   XRAY_VERSION   версия Xray-core (по умолчанию 26.9.30)
 #   EXTENSION_IDS  ID расширения через запятую (по умолчанию — ID из ключа в manifest.json;
 #                  добавьте сюда ID из Chrome Web Store, когда опубликуете)
+#   GO_WIN7        каталог пропатченного Go для Windows 7 (XTLS/go-win7). Если не задан,
+#                  скачивается версия GO_WIN7_VERSION; цели windows7/amd64 и windows7/386
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -20,7 +22,27 @@ EXTENSION_IDS="${EXTENSION_IDS:-mpmmjdhamocialllnfmcpkjealmekhpl}"
 REPO="${REPO:-maxhoney920/SafeBridge}"
 UPDATE_BASE="${UPDATE_BASE:-https://raw.githubusercontent.com/$REPO/downloads/}"
 TARGETS=("$@")
-[ ${#TARGETS[@]} -eq 0 ] && TARGETS=(windows/amd64 windows/arm64 darwin/amd64 darwin/arm64 linux/amd64 linux/arm64)
+[ ${#TARGETS[@]} -eq 0 ] && TARGETS=(windows/amd64 windows/arm64 windows7/amd64 windows7/386 darwin/amd64 darwin/arm64 linux/amd64 linux/arm64)
+
+# Windows 7: обычный Go с версии 1.21 её не поддерживает. XTLS выпускает пропатченный Go,
+# которым собирают свои сборки Xray-win7 — им же собираем помощник для Windows 7 (64 и 32 бита).
+GO_WIN7_VERSION="${GO_WIN7_VERSION:-1.26.7}"
+GO_WIN7_SHA256="${GO_WIN7_SHA256:-3ec8549eab338720c1a891f37c6d2467e7205997554bf649527d083f9973b82d}"
+go_win7() { # -> путь к go из пропатченного набора
+  if [ -n "${GO_WIN7:-}" ]; then echo "$GO_WIN7/bin/go"; return; fi
+  local dir=".cache/go-win7-$GO_WIN7_VERSION"
+  if [ ! -x "$dir/bin/go" ]; then
+    echo "  ↓ go-win7 $GO_WIN7_VERSION" >&2
+    mkdir -p .cache
+    curl -fsSL -o "$dir.zip.part" "https://github.com/XTLS/go-win7/releases/download/patched-$GO_WIN7_VERSION/go-for-win7-linux-amd64.zip"
+    got=$(sha256sum "$dir.zip.part" | cut -d' ' -f1)
+    if [ "$got" != "$GO_WIN7_SHA256" ]; then
+      echo "  ✗ контрольная сумма go-win7 не совпала ($got)" >&2; rm -f "$dir.zip.part"; exit 1
+    fi
+    rm -rf "$dir" && mkdir -p "$dir" && unzip -q "$dir.zip.part" -d "$dir" && rm -f "$dir.zip.part"
+  fi
+  echo "$PWD/$dir/bin/go"
+}
 
 CACHE=.cache/xray-$XRAY_VERSION
 DIST=dist
@@ -28,8 +50,8 @@ mkdir -p "$CACHE" "$DIST" host/core
 
 fetch_core() { # goos goarch -> путь к бинарнику xray
   local os=$1 arch=$2 xos xarch bin=xray
-  case "$os" in windows) xos=windows; bin=xray.exe ;; darwin) xos=macos ;; linux) xos=linux ;; esac
-  case "$arch" in amd64) xarch=64 ;; arm64) xarch=arm64-v8a ;; esac
+  case "$os" in windows) xos=windows; bin=xray.exe ;; windows7) xos=win7; bin=xray.exe ;; darwin) xos=macos ;; linux) xos=linux ;; esac
+  case "$arch" in amd64) xarch=64 ;; arm64) xarch=arm64-v8a ;; 386) xarch=32 ;; esac
   local name="Xray-$xos-$xarch"
   local arc="$CACHE/$name.zip"
   if [ ! -f "$arc" ]; then
@@ -57,7 +79,7 @@ WINRES="${WINRES:-$(command -v go-winres || true)}"
 rm -f host/rsrc_windows_*.syso
 if [ -n "$WINRES" ]; then
   winver="$VERSION"; while [ "$(printf '%s' "$winver" | tr -cd . | wc -c)" -lt 3 ]; do winver="$winver.0"; done
-  (cd host && "$WINRES" make --in winres/winres.json --arch amd64,arm64 --out rsrc \
+  (cd host && "$WINRES" make --in winres/winres.json --arch amd64,arm64,386 --out rsrc \
     --product-version "$winver" --file-version "$winver")
   echo "✓ сведения о программе для Windows ($winver)"
 else
@@ -69,13 +91,15 @@ for t in "${TARGETS[@]}"; do
   echo "▶ $os/$arch (Xray $XRAY_VERSION)"
   core=$(fetch_core "$os" "$arch")
   gzip -9 -c "$core" > host/core/xray.gz
-  suffix=""; [ "$os" = windows ] && suffix=".exe"
+  suffix=""; case "$os" in windows*) suffix=".exe" ;; esac
   out="$DIST/safebridge-$os-$arch$suffix"
-  (cd host && CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -tags embedcore -trimpath \
-    -ldflags "-s -w -X main.version=$VERSION -X main.extensionIDs=$EXTENSION_IDS -X main.bundledXray=$XRAY_VERSION -X main.updateBase=$UPDATE_BASE" -o "../$out" .)
+  gobin=go; goos=$os; variant=""
+  if [ "$os" = windows7 ]; then gobin=$(go_win7); goos=windows; variant=win7; fi
+  (cd host && CGO_ENABLED=0 GOOS=$goos GOARCH=$arch GOTOOLCHAIN=local "$gobin" build -tags embedcore -trimpath \
+    -ldflags "-s -w -X main.version=$VERSION -X main.extensionIDs=$EXTENSION_IDS -X main.bundledXray=$XRAY_VERSION -X main.updateBase=$UPDATE_BASE -X main.variant=$variant" -o "../$out" .)
   echo "  ✓ $out ($(du -h "$out" | cut -f1))"
   # прежнее имя файла — для старых ссылок и версий расширения (в git это тот же объект, места не занимает)
-  cp "$out" "$DIST/vlessbridge-$os-$arch$suffix"
+  [ "$os" = windows7 ] || cp "$out" "$DIST/vlessbridge-$os-$arch$suffix"
   if [ "$os" = darwin ]; then
     # для кнопки «Скачать»: zip сохраняет право на запуск, двойной клик открывает установку в Терминале
     tmpd=$(mktemp -d); cp "$out" "$tmpd/safebridge"; chmod +x "$tmpd/safebridge"

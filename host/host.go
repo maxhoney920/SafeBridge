@@ -150,7 +150,7 @@ func (h *Host) dispatch(req request) (any, error) {
 	case "hello":
 		_, coreErr := CorePath()
 		r := map[string]any{"version": version, "core": CoreVersion(), "bundledCore": bundledXray, "os": runtime.GOOS, "arch": runtime.GOARCH,
-			"status": h.core.Status()}
+			"variant": variant, "status": h.core.Status()}
 		if coreErr != nil {
 			r["coreError"] = coreErr.Error()
 		}

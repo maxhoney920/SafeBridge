@@ -151,7 +151,14 @@ type UpdateInfo struct {
 	} `json:"core"`
 }
 
-func platformKey() string { return runtime.GOOS + "-" + runtime.GOARCH }
+// platformKey — ключ файла помощника в latest.json: windows-amd64, linux-arm64…
+// Сборка для Windows 7 обновляется только на свою: windows7-amd64, windows7-386.
+func platformKey() string {
+	if isWin7Build() {
+		return "windows7-" + runtime.GOARCH
+	}
+	return runtime.GOOS + "-" + runtime.GOARCH
+}
 
 // fetchLatestHelper загружает latest.json и проверяет его подпись ed25519. Без верной
 // подписи хешам из файла не доверяем: иначе тот, кто подменит файлы в ветке downloads
@@ -271,7 +278,10 @@ func CheckUpdates(ctx context.Context, proxyPort int) *UpdateInfo {
 
 func xrayAssetName() (string, error) {
 	osName := map[string]string{"windows": "windows", "darwin": "macos", "linux": "linux"}[runtime.GOOS]
-	arch := map[string]string{"amd64": "64", "arm64": "arm64-v8a"}[runtime.GOARCH]
+	arch := map[string]string{"amd64": "64", "arm64": "arm64-v8a", "386": "32"}[runtime.GOARCH]
+	if isWin7Build() {
+		osName = "win7" // Xray-win7-64.zip / Xray-win7-32.zip: обычные сборки на Windows 7 не запускаются
+	}
 	if osName == "" || arch == "" {
 		return "", errors.New("для этой платформы обновление ядра не поддерживается")
 	}

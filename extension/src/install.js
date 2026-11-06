@@ -1,6 +1,6 @@
 import { ext, isFirefox } from './compat.js';
 import { MIN_HELPER, versionLess } from './common.js';
-import { el, send, HELPER_FILES, DOWNLOAD_BASE, INSTALL_CMD, installSteps, helperDownload, INSTALL_DOC, madeBy } from './common.js';
+import { el, send, HELPER_FILES, DOWNLOAD_BASE, INSTALL_CMD, installSteps, helperDownload, detectOldWindows, INSTALL_DOC, madeBy } from './common.js';
 
 const app = document.getElementById('app');
 const statusBox = document.getElementById('status');
@@ -86,7 +86,7 @@ function render() {
 
 (async () => {
   const p = await ext.runtime.getPlatformInfo();
-  const d = helperDownload(p);
+  const d = helperDownload(p, await detectOldWindows());
   if (d) { mine = { os: d.os, arch: d.arch }; tab = d.os; }
   const hash = location.hash.slice(1);
   if (HELPER_FILES.some((g) => g.os === hash)) tab = hash;

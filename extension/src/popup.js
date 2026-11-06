@@ -1,5 +1,5 @@
 import { ext, isFirefox } from './compat.js';
-import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, installSteps, madeBy, MIN_HELPER, versionLess, MODES, LIST_NAMES, presetFor, relatedDomains, ACCOUNT, ACCOUNT_ERRORS, expiringSubs, fmtLeft, subExpire } from './common.js';
+import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, detectOldWindows, installSteps, madeBy, MIN_HELPER, versionLess, MODES, LIST_NAMES, presetFor, relatedDomains, ACCOUNT, ACCOUNT_ERRORS, expiringSubs, fmtLeft, subExpire } from './common.js';
 
 const app = document.getElementById('app');
 let state = null;
@@ -54,10 +54,10 @@ function viewMissingHost() {
     el('h1', { text: 'Установите помощник' }),
     el('p', { text: 'Расширение подключается к серверам через небольшую программу на компьютере. Её нужно установить один раз, права администратора не понадобятся.' }),
   );
-  ext.runtime.getPlatformInfo().then((p) => {
-    const d = helperDownload(p);
+  Promise.all([ext.runtime.getPlatformInfo(), detectOldWindows()]).then(([p, oldWin]) => {
+    const d = helperDownload(p, oldWin);
     const row = el('div', { class: 'row' });
-    if (d) row.append(el('a', { class: 'btn primary', href: d.url, download: d.file, text: `Скачать для ${d.name}` }));
+    if (d) row.append(el('a', { class: 'btn primary', href: d.url, download: d.file, text: `Скачать для ${d.arch.startsWith('win7') ? (d.arch === 'win7-386' ? 'Windows (32 бита)' : 'Windows 7') : d.name}` }));
     row.append(el('button', { class: 'btn', onclick: () => openPage('install.html'), text: d ? 'Другие системы' : 'Выбрать систему' }));
     box.append(row);
     if (d) box.append(el('ol', { class: 'small' }, installSteps(d.os, d.file).map((t) => el('li', { text: t }))));
