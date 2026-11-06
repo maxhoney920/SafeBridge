@@ -1,0 +1,18 @@
+{
+  "addons": {
+    "vlessbridge@safebridge": {
+      "updates": [
+        {
+          "version": "0.7.0",
+          "update_link": "https://raw.githubusercontent.com/maxhoney920/SafeBridge/downloads/vlessbridge-firefox-0.7.0-signed.xpi",
+          "update_hash": "sha256:fd037b3e9d9680903258b84bf6953789999a38967ce773728c3e6d636732a171",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "115.0"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

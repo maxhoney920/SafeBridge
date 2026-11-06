@@ -1,0 +1,43 @@
+{
+  "version": "0.7.0",
+  "xray": "26.9.30",
+  "files": {
+    "darwin-amd64": {
+      "name": "safebridge-darwin-amd64",
+      "sha256": "0038bbeec4729e72ee50ab8e45099b6723f1ea22f9152bd52670f72edea4c166"
+    },
+    "darwin-arm64": {
+      "name": "safebridge-darwin-arm64",
+      "sha256": "50be9e673c4a521d7c1aacbd1d115b8f0f6fd5309cf819bea01365df744dd94a"
+    },
+    "linux-amd64": {
+      "name": "safebridge-linux-amd64",
+      "sha256": "f7b53264bbfc3e6b1188d1d5c3f3134a9bc0ef730a150765f14edd31aeb0c8e8"
+    },
+    "linux-arm64": {
+      "name": "safebridge-linux-arm64",
+      "sha256": "34023cab7bec22012b14a597b8a86602594f5cbdb34c9aeffca4c5484b59fddf"
+    },
+    "windows-amd64": {
+      "name": "safebridge-windows-amd64.exe",
+      "sha256": "02434975f3899a03aaf678b466e24e0754340b19ee94539dde7bf4cc2445a085"
+    },
+    "windows-arm64": {
+      "name": "safebridge-windows-arm64.exe",
+      "sha256": "62eaa30a674a648653ff90aaf7945c03ea72034a4ac31c154e9b579a4bbcdfbc"
+    },
+    "windows7-386": {
+      "name": "safebridge-windows7-386.exe",
+      "sha256": "e4f6e07ca40bb87b6e198491aee5f16730b707db7c95d2b5ff4c45f641796cf5"
+    },
+    "windows7-amd64": {
+      "name": "safebridge-windows7-amd64.exe",
+      "sha256": "f6c8c13bd1092637d80f6f4465db9cd222478ee47fa34f794ef93f1919febd3c"
+    }
+  },
+  "extension": {
+    "version": "0.7.0",
+    "name": "safebridge-extension-0.7.0.zip",
+    "sha256": "3d5753b2618d30eae98e3fcd79c40f874ae374f21997b46c4caed5aaf25bb43c"
+  }
+}
