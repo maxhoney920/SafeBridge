@@ -369,7 +369,7 @@ export function relatedDomains(hosts, tabHost, list) {
 // Режимы и списки — одни и те же слова в окне расширения и в настройках.
 export const MODES = {
   all: { label: 'Все сайты', hint: 'Все сайты открываются через VPN.' },
-  include: { label: 'Только список', hint: 'Через VPN открываются только сайты из списка «Через VPN». Остальные — напрямую, как без расширения.' },
+  include: { label: 'Только список', hint: 'Через VPN открываются только сайты из списка «Через VPN». Остальные — напрямую, без VPN.' },
   exclude: { label: 'Исключения', hint: 'Через VPN открываются все сайты, кроме исключений из списка «Без VPN».' },
 };
 export const LIST_NAMES = { include: '«Через VPN»', exclude: '«Без VPN»' };

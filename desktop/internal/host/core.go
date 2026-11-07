@@ -245,6 +245,9 @@ func validServers(servers []ApplyServer) []ApplyServer {
 	return out
 }
 
+// p2pSniffing — распознавание протокола без подмены адреса: нужно правилу для P2P.
+var p2pSniffing = map[string]any{"enabled": true, "destOverride": []string{"http", "tls", "quic"}, "routeOnly": true}
+
 func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 	servers = validServers(servers)
 	if len(servers) == 0 {
@@ -259,12 +262,12 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 	}
 	inbounds := []any{
 		map[string]any{"tag": "main", "listen": "127.0.0.1", "port": l.port, "protocol": "socks",
-			"settings": map[string]any{"auth": "noauth", "udp": true}},
+			"settings": map[string]any{"auth": "noauth", "udp": true}, "sniffing": p2pSniffing},
 	}
 	mainTags := []string{"main"}
 	if l.httpPort > 0 {
 		inbounds = append(inbounds, map[string]any{"tag": "main-http", "listen": "127.0.0.1", "port": l.httpPort, "protocol": "http",
-			"settings": map[string]any{}})
+			"settings": map[string]any{}, "sniffing": p2pSniffing})
 		mainTags = append(mainTags, "main-http")
 	}
 	if l.tun != nil && isMacLegacy() {
@@ -282,7 +285,9 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 			"sniffing": map[string]any{"enabled": true, "destOverride": []string{"http", "tls", "quic"}, "routeOnly": true},
 		})
 	}
-	rules := []any{}
+	// P2P (BitTorrent, uTP) — всегда напрямую, мимо VPN-сервера: сервисы запрещают торренты
+	// через свои серверы. Правило первое и не настраивается.
+	rules := []any{map[string]any{"protocol": []string{"bittorrent"}, "outboundTag": "direct"}}
 	var outbounds []any
 	for _, s := range servers {
 		ob := sanitizeOutbound(s.Outbound)
