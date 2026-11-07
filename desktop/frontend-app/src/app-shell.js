@@ -55,4 +55,5 @@ async function serviceGate() {
   await import('./background.js');
   globalThis.__sbNavigate('popup.html');
   if (ext.caps.tray) (await import('./app-tray.js')).startTray();
+  (await import('./app-notify.js')).startNotify();
 })();

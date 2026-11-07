@@ -378,7 +378,9 @@ function appUpdateRow(withCheck) {
   const busyNow = busy.appUpdate || state.busy?.appUpdate;
   const line = !a ? 'ещё не проверялось'
     : a.error ? `не удалось проверить: ${a.error}`
-    : a.available ? `вышла версия ${a.latest}` : 'установлена последняя версия';
+    : a.available ? `вышла версия ${a.latest}`
+    : a.pending ? `вышла версия ${a.latest}, сборка для вашей системы скоро появится`
+    : `установлена последняя версия${a.latest ? ` (${a.current})` : ''}`;
   return el('div', { class: 'updates' },
     el('div', { class: 'upd-row' },
       el('div', {}, el('b', { text: 'Приложение SafeBridge' }), el('div', { class: 'muted small', text: line })),

@@ -2,7 +2,7 @@
 // настройки — включить/выключить, сервер, режим. Меню собирается здесь из того же
 // состояния, что видит окно, а показывает его приложение (Go + AppKit).
 import { ext } from './compat.js';
-import { MODES } from './common.js';
+import { MODES, ACCOUNT, expiringSubs, fmtLeft } from './common.js';
 
 const send = (type, data = {}) => ext.runtime.sendMessage({ type, ...data });
 const MAX_SERVERS = 40;
@@ -24,8 +24,10 @@ function build(st) {
   const status = active ? `Подключено${sel ? ` · ${sel.name}` : ''}${ms > 0 ? ` · ${ms} мс` : ''}`
     : problem ? 'Нет соединения с сервером' : 'VPN выключен';
 
+  const exp = expiringSubs(st)[0];
   const items = [
     { title: status, disabled: true },
+    ...(exp ? [{ id: 'renew', title: `⚠ Подписка «${exp.sub.name}» ${fmtLeft(exp.left)} — продлить` }] : []),
     servers.length
       ? { id: 'toggle', title: st.enabled ? 'Выключить VPN' : 'Включить VPN' }
       : { title: 'Добавьте подписку в окне SafeBridge', disabled: true },
@@ -50,7 +52,8 @@ function build(st) {
   items.push({ id: 'settings', title: 'Настройки…' });
   items.push({ sep: true });
   items.push({ id: 'quit', title: 'Выйти из SafeBridge' });
-  return { visible: st.appTray !== false, on: active, tooltip: `SafeBridge — ${status}`, items };
+  const tip = `SafeBridge — ${status}` + (exp ? `. Подписка «${exp.sub.name}» ${fmtLeft(exp.left)}` : '');
+  return { visible: st.appTray !== false, on: active, tooltip: tip, items };
 }
 
 let timer = null;
@@ -77,6 +80,12 @@ async function onClick(id) {
       await send('select', { id: id.slice(4) });
     } else if (id.startsWith('mode:')) {
       await send('setMode', { mode: id.slice(5) });
+    } else if (id === 'renew') {
+      const st = await getState();
+      const exp = st && expiringSubs(st)[0];
+      const link = exp?.sub.account && st.account ? (st.account.renewUrl || ACCOUNT.bot) : '';
+      if (link) await ext.bridge.call('OpenURL', link);
+      else globalThis.__sbNavigate?.('options.html#subs');
     } else if (id === 'ping') {
       await send('ping');
     } else if (id === 'open') {

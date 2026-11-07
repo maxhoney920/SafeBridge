@@ -172,6 +172,7 @@ export const DEFAULTS = {
   listsCheckedAt: 0,
   listsError: '',
   listsUrl: '',        // только для проверок: локальный адрес lists.json
+  expireNotified: {},  // приложение: когда напоминали продлить подписку (подписка:срок → время)
 };
 
 export async function load() {

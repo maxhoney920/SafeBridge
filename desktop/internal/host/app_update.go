@@ -23,6 +23,7 @@ type AppInfo struct {
 	Latest    string `json:"latest,omitempty"`
 	Available bool   `json:"available"`
 	CanUpdate bool   `json:"canUpdate"` // можно обновить из приложения (иначе — скачать вручную)
+	Pending   bool   `json:"pending,omitempty"` // новая версия вышла, но сборки для этой системы ещё нет
 	Page      string `json:"page,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
@@ -58,7 +59,9 @@ func CheckApp(ctx context.Context, proxyPort int) *AppInfo {
 	}
 	ai.Latest = li.App.Version
 	_, has := li.App.Files[appPlatformKey()]
-	ai.Available = has && version != "dev" && compareVersions(li.App.Version, version) > 0
+	newer := version != "dev" && compareVersions(li.App.Version, version) > 0
+	ai.Available = has && newer
+	ai.Pending = newer && !has
 	ai.CanUpdate = ai.Available && (runtime.GOOS == "windows" || runtime.GOOS == "darwin")
 	return ai
 }

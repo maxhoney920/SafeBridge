@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/safebridge/desktop/internal/host"
+	"github.com/safebridge/desktop/internal/notify"
 	"github.com/safebridge/desktop/internal/svc"
 	"github.com/safebridge/desktop/internal/sysproxy"
 	"github.com/safebridge/desktop/internal/tray"
@@ -244,3 +245,6 @@ func (a *App) ShowWindow() { a.ui.show() }
 
 // Quit завершает приложение (пункт «Выйти» в строке меню).
 func (a *App) Quit() { a.ui.quit() }
+
+// Notify — системное уведомление (напоминание продлить подписку); link открывается по нажатию.
+func (a *App) Notify(title, text, link string) error { return notify.Show(title, text, link) }
