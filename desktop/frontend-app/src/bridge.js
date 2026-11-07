@@ -7,7 +7,10 @@ function createBridge() {
   const wails = globalThis.go?.main?.App;
   if (wails) {
     return {
-      call: (method, ...args) => wails[method](...args),
+      // Wails отклоняет промис строкой, а интерфейс ждёт Error с текстом в message
+      call: (method, ...args) => Promise.resolve(wails[method](...args)).catch((e) => {
+        throw e instanceof Error ? e : new Error(typeof e === 'string' ? e : (e?.message || String(e)));
+      }),
       on: (name, fn) => globalThis.runtime.EventsOn(name, fn),
     };
   }

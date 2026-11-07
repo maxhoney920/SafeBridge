@@ -604,6 +604,14 @@ async function updateHelper() {
 }
 
 async function scheduleUpdates() {
+  // приложение после обновления: прежний результат «вышла версия X» уже не верен
+  if (ext.isApp) {
+    const { updates } = await load();
+    const cur = ext.runtime.getManifest().version;
+    if (updates?.app && updates.app.current !== cur) {
+      await save({ updates: { ...updates, app: { ...updates.app, current: cur, available: !!updates.app.latest && versionLess(cur, updates.app.latest), pending: false } } });
+    }
+  }
   const a = await ext.alarms.get('updates');
   if (!a) await ext.alarms.create('updates', { periodInMinutes: UPDATE_PERIOD_MIN, delayInMinutes: 5 });
   const st = await load();
