@@ -7,8 +7,8 @@
 // набор узнаётся на странице и в списке пользователя; по умолчанию первые два адреса);
 // service — набор одного сервиса (только такие предлагаются в «Без VPN» со страницы).
 export const LISTS = {
-  rev: 1,
-  updated: '2026-11-07',
+  rev: 2,
+  updated: '2026-11-08',
   vpn: [
     { name: 'YouTube', domains: ['youtube.com', 'youtu.be', 'googlevideo.com', 'ytimg.com', 'ggpht.com', 'youtube-nocookie.com', 'youtubei.googleapis.com', 'youtube.googleapis.com', 'jnn-pa.googleapis.com', 'youtubekids.com', 'yt.be'] },
     { name: 'Instagram', domains: ['instagram.com', 'cdninstagram.com', 'fbcdn.net', 'ig.me'] },
@@ -36,6 +36,20 @@ export const LISTS = {
     { name: 'Reddit', domains: ['reddit.com', 'redd.it', 'redditmedia.com', 'redditstatic.com'] },
     { name: 'Medium', domains: ['medium.com', 'miro.medium.com'] },
     { name: 'Telegram Web', domains: ['telegram.org', 't.me', 'telegram.me', 'telesco.pe'] },
+    // Торрент-трекеры. Адреса сверены с v2fly/domain-list-community (rutracker) и
+    // itdoginfo/allow-domains (Russia/inside). t-ru.org — анонсер RuTracker (bt*.t-ru.org):
+    // через него торрент-клиент узнаёт о раздающих.
+    { name: 'RuTracker', main: ['rutracker.org', 'rutracker.net', 'rutracker.cc'],
+      domains: ['rutracker.org', 'rutracker.net', 'rutracker.cc', 'rutracker.cr', 'rutracker.me', 'rutracker.nl',
+        'rutracker.wiki', 'rutrk.org', 'maintracker.org', 't-ru.org'] },
+    { name: 'LostFilm', main: ['lostfilm.tv', 'lostfilm.download', 'lostfilm.uno', 'lostfilm.tw'],
+      domains: ['lostfilm.tv', 'lostfilm.download', 'lostfilm.uno', 'lostfilm.tw', 'lostfilm.top', 'lostfilmtv2.site', 'insearch.site'] },
+    { name: 'NNM-Club', main: ['nnmclub.to', 'nnm-club.me'], domains: ['nnmclub.to', 'nnm-club.me', 'nnmstatic.win'] },
+    { name: 'Rutor', main: ['rutor.info', 'rutor.is', 'rutor.org'], domains: ['rutor.info', 'rutor.is', 'rutor.org'] },
+    { name: 'Kinozal', main: ['kinozal.tv', 'kinozal.me', 'kinozal.guru'], domains: ['kinozal.tv', 'kinozal.me', 'kinozal.guru', 'kinozaltv.life'] },
+    { name: 'AniLibria', main: ['anilibria.tv', 'anilibria.top', 'anilibria.org'], domains: ['anilibria.tv', 'anilibria.org', 'anilibria.uno', 'anilibria.wtf', 'anilibria.top', 'anilib.me'] },
+    { name: 'Другие трекеры', main: ['rustorka.com', 'megapeer.vip', 'riperam.org', 'torrentgalaxy.to'],
+      domains: ['rustorka.com', 'megapeer.ru', 'megapeer.vip', 'riperam.org', 'torrentgalaxy.to', 'fast-torrent.club', 'filmitorrent.net', 'cloudtorrents.com'] },
   ],
   direct: [
     { name: 'Все сайты .ru, .рф, .su', domains: ['ru', 'xn--p1ai', 'su'] },
