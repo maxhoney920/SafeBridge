@@ -1,0 +1,70 @@
+name: release
+# Релиз на GitHub из того, что уже опубликовано в ветке downloads (подписанный latest.json,
+# сборки приложения для Windows и macOS, расширение, подписанный .xpi, помощники).
+# Запуск вручную: Actions → release → Run workflow (после того как сборки для macOS
+# новой версии приложения выложены и сборка «build» прошла).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Collect files
+        id: files
+        run: |
+          APP=$(cat desktop/VERSION)
+          EXT=$(jq -r .version extension/manifest.json)
+          git fetch -q --depth 1 origin downloads
+          mkdir -p rel && cd rel
+          get() { git show "origin/downloads:$1" > "$2" 2>/dev/null && echo "  ✓ $2" || { rm -f "$2"; echo "  — нет $1"; }; }
+          for f in windows-x64.exe windows-arm64.exe windows7-x64.exe windows7-x86.exe macos.zip macos-legacy.zip; do
+            get "SafeBridge-$APP-$f" "SafeBridge-$APP-$f"
+          done
+          get "safebridge-extension-$EXT.zip" "SafeBridge-extension-$EXT.zip"
+          get "vlessbridge-firefox-$EXT-signed.xpi" "SafeBridge-firefox-$EXT.xpi"
+          for f in windows-amd64.exe windows-arm64.exe windows7-amd64.exe windows7-386.exe linux-amd64 linux-arm64; do
+            get "safebridge-$f" "safebridge-helper-$f"
+          done
+          get "safebridge-macos-arm64.zip" "safebridge-helper-macos-arm64.zip"
+          get "safebridge-macos-amd64.zip" "safebridge-helper-macos-amd64.zip"
+          ls SafeBridge-$APP-macos.zip SafeBridge-$APP-windows-x64.exe >/dev/null || { echo "::error::Нет сборок приложения $APP — сначала выложите сборки для macOS и дождитесь сборки build"; exit 1; }
+          sha256sum * > SHA256SUMS.txt
+          cat > ../notes.md <<NOTES
+          ## Приложение для компьютера $APP
+
+          Весь компьютер через VPN: окно, вход через Google, подписки и списки сайтов — как у расширения.
+
+          | Система | Файл |
+          |---|---|
+          | Windows 10 и 11 | SafeBridge-$APP-windows-x64.exe · для ARM — SafeBridge-$APP-windows-arm64.exe |
+          | Windows 7 и 8 | SafeBridge-$APP-windows7-x64.exe (64 бита) · SafeBridge-$APP-windows7-x86.exe (32 бита) |
+          | macOS 12 и новее | SafeBridge-$APP-macos.zip — Apple Silicon и Intel |
+          | macOS 10.13–11 | SafeBridge-$APP-macos-legacy.zip — High Sierra, Mojave, Catalina, Big Sur |
+
+          Установленное приложение обновляется само (проверка раз в 6 часов, только с проверенной подписью).
+
+          ## Расширение для браузера $EXT
+
+          - Chrome, Edge, Brave, Яндекс Браузер, Vivaldi: SafeBridge-extension-$EXT.zip
+          - Firefox: SafeBridge-firefox-$EXT.xpi (подписано Mozilla)
+          - Помощник для расширения: файлы safebridge-helper-* (или установка из окна расширения)
+
+          Как установить — в [README](https://github.com/${GITHUB_REPOSITORY}#readme). Контрольные суммы — в SHA256SUMS.txt.
+          NOTES
+          sed -i 's/^          //' ../notes.md
+          echo "app=$APP" >> "$GITHUB_OUTPUT"
+          echo "ext=$EXT" >> "$GITHUB_OUTPUT"
+      - name: Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: v${{ steps.files.outputs.app }}
+          target_commitish: ${{ github.sha }}
+          name: SafeBridge ${{ steps.files.outputs.app }} — приложение для компьютера и расширение ${{ steps.files.outputs.ext }}
+          body_path: notes.md
+          make_latest: true
+          files: rel/*
