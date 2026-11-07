@@ -131,6 +131,8 @@ export async function createExt() {
         if (m?.cmd === 'apply') {
           // режим «Весь трафик»: ядру нужны списки сайтов, правила строит Xray
           m = { ...m, args: { ...m.args, tun: tunActive() ? { mode: data.mode || 'all', include: data.include || [], exclude: data.exclude || [] } : null } };
+          // macOS (только TUN): постоянный порт прокси не нужен — ядро берёт любой свободный
+          if (caps.tunOnly) m.args.preferredPort = 0;
         }
         bridge.call('Native', JSON.stringify(m));
       },

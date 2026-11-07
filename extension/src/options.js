@@ -288,7 +288,7 @@ function settingsSection() {
         el('div', { class: 'hint', text: 'Работает в режиме «Все сайты». Без неё сайты могут увидеть ваш настоящий IP через звонки и WebRTC.' })),
       el('div', { class: 'field' }, el('label', { for: 'pingUrl', text: 'Адрес для проверки пинга' }), ping,
         el('div', { class: 'hint', text: 'Только https. Пинг — время загрузки этого адреса через сервер.' })),
-      el('div', { class: 'field' }, el('label', { for: 'port', text: 'Локальный порт' }), port,
+      !ext.caps?.tunOnly && el('div', { class: 'field' }, el('label', { for: 'port', text: 'Локальный порт' }), port,
         el('div', { class: 'hint', text: 'Порт прокси на 127.0.0.1. Оставьте пустым, если не нужен постоянный.' })),
       el('div', { class: 'row', style: 'margin-top:8px' },
         el('button', { class: 'btn primary', onclick: saveAll, disabled: busy.settings }, busy.settings ? spin() : 'Сохранить')),
@@ -400,7 +400,9 @@ function appSection() {
   const items = [
     ['Приложение', `SafeBridge ${ext.runtime.getManifest().version}${h ? ` (${h.os}/${h.arch})` : ''}`],
     ['Ядро', h?.core ? `Xray ${h.core}` : (h?.coreError || '—')],
-    ['Состояние', state.core.running ? `работает${state.core.tun ? ', весь трафик (TUN)' : `, прокси 127.0.0.1:${state.core.httpPort || state.core.port}`}` : (state.coreError || 'остановлено')],
+    ['Состояние', state.core.running
+      ? (state.core.tun ? 'работает, весь трафик (TUN)' : ext.caps?.tunOnly ? 'готово к подключению (VPN выключен)' : `работает, прокси 127.0.0.1:${state.core.httpPort || state.core.port}`)
+      : (state.coreError || 'остановлено')],
   ];
   const legacy = h?.variant === 'macos-legacy';
   return el('section', { id: 'helper' },
