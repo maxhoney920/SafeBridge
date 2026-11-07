@@ -1,0 +1,7 @@
+# собирается из ../extension и frontend-app/ (sync-frontend.sh)
+/frontend/
+/dist/
+/.cache/
+/internal/host/core/*
+!/internal/host/core/.keep
+*.syso

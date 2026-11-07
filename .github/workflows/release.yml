@@ -22,9 +22,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
       - name: Test
-        run: cd host && go test ./...
+        run: |
+          cd host && go test ./...
+          cd ../desktop && GOFLAGS=-mod=mod GOSUMDB=off go test ./internal/...
       - name: Install go-winres
         # сведения о программе в exe для Windows (название, версия, значок)
         run: go install github.com/tc-hib/go-winres@v0.3.3 && echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
@@ -34,6 +36,22 @@ jobs:
           EXTENSION_IDS: ${{ vars.EXTENSION_IDS || 'mpmmjdhamocialllnfmcpkjealmekhpl' }}
           REPO: ${{ github.repository }}
         run: ./build.sh
+
+      # Приложение для компьютера (desktop/): Windows 10/11 и Windows 7, тот же Xray из .cache.
+      # Сборки для macOS делаются на Mac (build-macos*.sh) и лежат в ветке downloads —
+      # переносим их в новую публикацию, если версия приложения та же.
+      - name: Build desktop app
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          V=$(cat desktop/VERSION)
+          (cd desktop && ./build.sh)
+          cp desktop/dist/SafeBridge-$V-*.exe dist/
+          for f in macos macos-legacy; do
+            curl -fsSL -o "dist/SafeBridge-$V-$f.zip" "https://github.com/$REPO/raw/downloads/SafeBridge-$V-$f.zip" \
+              && echo "✓ SafeBridge-$V-$f.zip из ветки downloads" || rm -f "dist/SafeBridge-$V-$f.zip"
+          done
+          python3 desktop/tools/add-app-latest.py dist "$V"
 
       # Подпись latest.json ключом ed25519 (секрет UPDATE_SIGNING_KEY). Помощник ставит
       # обновление только с верной подписью, поэтому без секрета обновления помощника не пройдут.

@@ -126,6 +126,18 @@ json.dump({"version": ver, "xray": xray, "files": files}, open(os.path.join(dist
 print("✓", os.path.join(dist, "latest.json"), "—", ", ".join(files))
 PY
 
+# lists.json — готовые наборы сайтов из extension/src/presets.js: по нему расширение и
+# приложение получают новые наборы без обновления (rev в presets.js — номер версии)
+node -e '
+const src = require("fs").readFileSync("extension/src/presets.js", "utf8").replace("export const LISTS", "const LISTS");
+const L = new Function(src + "; return LISTS;")();
+const bad = [];
+for (const p of [...L.vpn, ...L.direct]) for (const d of p.domains) if (!/^[a-z0-9-]+(\.[a-z0-9-]+)*$/.test(d)) bad.push(p.name + ": " + d);
+if (!Number.isInteger(L.rev) || bad.length) { console.error("presets.js: " + (bad.join(", ") || "нет rev")); process.exit(1); }
+process.stdout.write(JSON.stringify(L));
+' > "$DIST/lists.json"
+echo "✓ $DIST/lists.json (rev $(python3 -c "import json;print(json.load(open('$DIST/lists.json'))['rev'])"))"
+
 # архив расширения: внутри одна папка SafeBridge с manifest.json
 rm -rf "$DIST/SafeBridge" "$DIST/safebridge-extension-$VERSION.zip"
 cp -r extension "$DIST/SafeBridge"

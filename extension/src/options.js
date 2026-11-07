@@ -1,6 +1,6 @@
-import { ext, isFirefox } from './compat.js';
+import { ext, isFirefox, isApp } from './compat.js';
 import { MIN_HELPER, versionLess } from './common.js';
-import { el, send, fmtBytes, fmtAgo, fmtDate, PRESETS_VPN, PRESETS_DIRECT, madeBy, normalizeDomain, plural, MODES, LIST_NAMES, DOWNLOADS_PAGE, ACCOUNT, ACCOUNT_ERRORS, subExpire, expiringSubs, fmtLeft } from './common.js';
+import { el, send, fmtBytes, fmtAgo, fmtDate, presetsOf, listsSummary, madeBy, normalizeDomain, plural, MODES, LIST_NAMES, DOWNLOADS_PAGE, ACCOUNT, ACCOUNT_ERRORS, subExpire, expiringSubs, fmtLeft } from './common.js';
 
 const app = document.getElementById('app');
 let state = null;
@@ -14,7 +14,7 @@ async function act(type, data, key = type, okText) {
   render();
   try {
     const r = await send(type, data);
-    if (!r?.ok) throw new Error(r?.error || 'Нет ответа от расширения');
+    if (!r?.ok) throw new Error(r?.error || (isApp ? 'Нет ответа от приложения' : 'Нет ответа от расширения'));
     if (r.result?.subs) state = r.result;
     if (okText) toast(okText);
     return r.result;
@@ -78,7 +78,7 @@ function subsSection() {
         fromAccount && el('button', { class: 'btn', onclick: () => ext.tabs.create({ url: state.account.renewUrl || ACCOUNT.bot }), text: 'Продлить' }),
         fromAccount
           ? el('button', { class: 'btn', title: 'Выключить этот ключ. Включить снова можно в карточке аккаунта выше.', onclick: () => act('removeSub', { id: sub.id }, 'rm', 'Ключ выключен'), text: 'Не использовать' })
-          : el('button', { class: 'btn danger', onclick: () => confirm(`Удалить подписку «${sub.name}»?`) && act('removeSub', { id: sub.id }, 'rm', 'Подписка удалена'), text: 'Удалить' })),
+          : el('button', { class: 'btn danger', onclick: async () => (await ask(`Удалить подписку «${sub.name}»?`, 'Удалить')) && act('removeSub', { id: sub.id }, 'rm', 'Подписка удалена'), text: 'Удалить' })),
       soon && el('div', { class: 'notice', text: `Подписка ${fmtLeft(soon.left)}.` }),
       el('div', { class: 'facts' }, facts),
       /^http:\/\//i.test(sub.url) && !/^http:\/\/(127\.|localhost)/i.test(sub.url) && el('div', { class: 'notice', text: 'Ссылка без https: по дороге её содержимое можно подменить и подсунуть чужие серверы. Попросите у VPN-сервиса ссылку, которая начинается с https://.' }),
@@ -145,7 +145,7 @@ function accountCard() {
           busy.accountSync || state.busy.account ? spin() : 'Проверить ключи'),
       el('button', { class: 'btn', onclick: () => ext.tabs.create({ url: acc.renewUrl || ACCOUNT.bot }), text: 'Открыть бота' }),
       el('a', { class: 'btn', href: ACCOUNT.cabinet, target: '_blank', rel: 'noopener', text: 'Личный кабинет' }),
-      el('button', { class: 'btn danger', onclick: () => confirm(`Выйти из аккаунта ${ACCOUNT.name}? Ключи из аккаунта удалятся из расширения, подписки, добавленные вручную, останутся.`) && act('accountLogout', {}, 'logout', 'Вы вышли из аккаунта'), text: 'Выйти' })),
+      el('button', { class: 'btn danger', onclick: async () => (await ask(`Выйти из аккаунта ${ACCOUNT.name}? Ключи из аккаунта удалятся из приложения, подписки, добавленные вручную, останутся.`, 'Выйти')) && act('accountLogout', {}, 'logout', 'Вы вышли из аккаунта'), text: 'Выйти' })),
     keyList);
 }
 
@@ -209,6 +209,31 @@ function listCard(key, title, desc, examples, presetsList) {
     errors[key] && el('div', { class: 'notice', style: 'margin-top:10px', text: errors[key] }));
 }
 
+// Наборы сайтов обновляются с GitHub без обновления расширения или приложения.
+function listsCard() {
+  const cur = presetsOf(state);
+  const u = state.listsUpdate;
+  const ru = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
+  const checked = state.listsCheckedAt ? fmtAgo(state.listsCheckedAt).replace(/^обновлена/, 'проверено') : 'ещё не проверялось';
+  const busyNow = busy.lists || state.busy?.lists;
+  const run = async (type) => {
+    const r = await act(type, {}, 'lists');
+    const res = r?.listsResult;
+    if (res?.status === 'updated') toast(res.added ? `Списки обновлены, добавлено адресов: ${res.added}` : 'Списки сайтов обновлены');
+    else if (res?.status === 'latest') toast('Списки сайтов уже последние');
+  };
+  return el('div', { class: 'card stack lists-card' },
+    el('div', { class: 'upd-row' },
+      el('div', {},
+        el('b', { text: 'Готовые наборы сайтов' }),
+        el('div', { class: 'muted small', text: `Версия ${cur.rev}${cur.updated ? ` от ${ru(cur.updated)}` : ''} · ${checked}. Новые адреса приходят сами — раз в 6 часов SafeBridge проверяет, не вышли ли новые списки.` })),
+      el('button', { class: 'btn', disabled: busyNow, onclick: () => run('listsCheck') }, busyNow ? spin() : 'Обновить списки сайтов')),
+    u && el('div', { class: 'notice row' },
+      el('span', { class: 'grow', text: `Вышли новые списки${u.updated ? ` от ${ru(u.updated)}` : ''}: ${listsSummary(u.changes)}. Новые адреса добавятся в наборы, которые уже есть в ваших списках.` }),
+      el('button', { class: 'btn primary', disabled: busyNow, onclick: () => run('listsApply'), text: 'Обновить списки' })),
+    (errors.lists || state.listsError) && el('div', { class: 'muted small', text: `Не удалось проверить: ${errors.lists || state.listsError}` }));
+}
+
 function sitesSection() {
   const modes = el('div', { class: 'modes' }, Object.entries(MODES).map(([k, m]) =>
     el('label', { class: 'mode-opt' + (state.mode === k ? ' cur' : '') },
@@ -216,15 +241,16 @@ function sitesSection() {
       el('span', {}, el('b', { text: m.label }), el('span', { class: 'muted', text: m.hint })))));
   return el('section', { id: 'sites' },
     el('h2', { text: 'Сайты' }),
-    el('p', { class: 'lead', text: 'Выберите, какие сайты открывать через VPN. То же самое переключается в окне расширения.' }),
+    el('p', { class: 'lead', text: 'Выберите, какие сайты открывать через VPN. То же самое переключается в главном окне.' }),
     el('div', { class: 'card' }, modes),
     el('div', { class: 'lists' },
       listCard('include', `Список ${LIST_NAMES.include}`,
         'Работает в режиме «Только список». Сюда — сайты, которые без VPN не открываются или работают плохо. Все остальные сайты пойдут напрямую.',
-        'youtube.com\ninstagram.com\nchatgpt.com', PRESETS_VPN),
+        'youtube.com\ninstagram.com\nchatgpt.com', presetsOf(state).vpn),
       listCard('exclude', `Список ${LIST_NAMES.exclude}`,
         'Работает в режиме «Исключения». Сюда — сайты, которым нужен ваш обычный адрес: банки, Госуслуги, маркетплейсы и сайты, которые не пускают из-за рубежа.',
-        'gosuslugi.ru\nsberbank.ru\nru', PRESETS_DIRECT)),
+        'gosuslugi.ru\nsberbank.ru\nru', presetsOf(state).direct)),
+    listsCard(),
     el('div', { class: 'card rules' },
       el('h3', { text: 'Как записывать сайты' }),
       el('ul', {},
@@ -232,7 +258,7 @@ function sitesSection() {
         el('li', {}, el('code', { text: 'youtube.com' }), ' включает все поддомены: ', el('code', { text: 'www.youtube.com' }), ', ', el('code', { text: 'm.youtube.com' }), ' и другие. Но не ', el('code', { text: 'youtube.ru' }), ' — это другой сайт.'),
         el('li', {}, el('code', { text: 'ru' }), ' (или ', el('code', { text: '.ru' }), ', ', el('code', { text: 'рф' }), ') — целиком доменная зона: все сайты, которые заканчиваются на .ru.'),
         el('li', {}, 'Большие сайты подгружают видео и картинки с других доменов. YouTube, например, берёт видео с googlevideo.com. Готовые наборы выше уже включают такие домены.'),
-        el('li', {}, 'Проще всего добавлять прямо с сайта: откройте его, нажмите на значок расширения и кнопку «Открывать через VPN» или «Открывать без VPN».'))));
+        el('li', {}, 'Проще всего добавлять прямо с сайта: откройте его, откройте главное окно и нажмите кнопку «Открывать через VPN» или «Открывать без VPN».'))));
 }
 
 // ---------- параметры ----------
@@ -250,13 +276,14 @@ function settingsSection() {
   } }, 'settings', 'Параметры сохранены');
   return el('section', { id: 'settings' },
     el('h2', { text: 'Параметры' }),
+    isApp && (ext.caps.tunOnly ? macModeCard() : appModeCard()),
     el('div', { class: 'card' },
       el('div', { class: 'field' }, el('label', { for: 'interval', text: 'Обновлять подписки' }), interval,
-        el('div', { class: 'hint', text: 'Обновить вручную можно кнопкой «Обновить» в окне расширения.' })),
-      el('div', { class: 'field' }, el('label', { for: 'killSwitch', text: 'Если VPN пропал' }),
+        el('div', { class: 'hint', text: 'Обновить вручную можно кнопкой «Обновить» в главном окне.' })),
+      !ext.caps?.tunOnly && el('div', { class: 'field' }, el('label', { for: 'killSwitch', text: 'Если VPN пропал' }),
         el('label', { class: 'check' }, kill, el('span', { text: 'Не открывать сайты напрямую' })),
         el('div', { class: 'hint', text: 'Пока VPN включён, но соединения с сервером нет, сайты, которые должны идти через VPN, не откроются — вместо того чтобы тихо открыться с вашего настоящего адреса.' })),
-      el('div', { class: 'field' }, el('label', { for: 'webrtc', text: 'Защита от утечки IP' }),
+      !isApp && el('div', { class: 'field' }, el('label', { for: 'webrtc', text: 'Защита от утечки IP' }),
         el('label', { class: 'check' }, webrtc, el('span', { text: 'Пускать WebRTC только через VPN' })),
         el('div', { class: 'hint', text: 'Работает в режиме «Все сайты». Без неё сайты могут увидеть ваш настоящий IP через звонки и WebRTC.' })),
       el('div', { class: 'field' }, el('label', { for: 'pingUrl', text: 'Адрес для проверки пинга' }), ping,
@@ -268,9 +295,141 @@ function settingsSection() {
       errors.settings && el('div', { class: 'notice', style: 'margin-top:10px', text: errors.settings })));
 }
 
+// Вопрос «да/нет» внутри окна. Встроенное окно подтверждения браузера в приложении на
+// macOS не показывается (сразу «нет»), поэтому свой диалог в стиле приложения.
+function ask(text, okText = 'Да') {
+  // обычный слой, а не <dialog>: его нет в старых WebKit (macOS High Sierra)
+  return new Promise((resolve) => {
+    const prev = document.activeElement;
+    let wrap;
+    const done = (yes) => { wrap.remove(); document.removeEventListener('keydown', onKey, true); prev?.focus?.(); resolve(yes); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); done(false); } };
+    const ok = el('button', { class: 'btn primary', type: 'button', onclick: () => done(true), text: okText });
+    wrap = el('div', { class: 'sb-ask-wrap', onclick: (e) => { if (e.target === wrap) done(false); } },
+      el('div', { class: 'sb-ask', role: 'alertdialog', 'aria-modal': 'true' },
+        el('p', { text }),
+        el('div', { class: 'row' },
+          el('button', { class: 'btn', type: 'button', onclick: () => done(false), text: 'Отмена' }),
+          ok)));
+    document.addEventListener('keydown', onKey, true);
+    document.body.append(wrap);
+    ok.focus();
+  });
+}
+
 // ---------- помощник ----------
 
+// Приложение на macOS: только «Весь трафик» через службу, плюс значок в строке меню
+function macModeCard() {
+  const removeService = async () => {
+    if (!(await ask('Удалить службу SafeBridge? VPN перестанет работать, а SafeBridge закроется. При следующем запуске он предложит установить службу снова.', 'Удалить'))) return;
+    try {
+      await ext.bridge.call('ServiceUninstall');
+      await ext.bridge.call('Quit');
+    } catch (e) {
+      errors.svc = e.message === 'отменено' ? '' : e.message;
+      render();
+    }
+  };
+  return el('div', { class: 'card stack', style: 'margin-bottom:16px' },
+    el('b', { text: 'Как пускать трафик через VPN' }),
+    el('div', { class: 'muted small', text: 'Через VPN идёт весь трафик компьютера (режим TUN), включая игры и мессенджеры. Списки сайтов и режимы «Только список» и «Исключения» работают и здесь. Ядро работает в службе SafeBridge с правами администратора.' }),
+    ext.caps.tray && el('label', { class: 'check' },
+      el('input', { type: 'checkbox', id: 'appTray', checked: state.appTray !== false, onchange: (e) => ext.storage.local.set({ appTray: e.target.checked }).then(reload) }),
+      el('span', { text: 'Показывать SafeBridge в строке меню (рядом с часами): состояние и быстрые настройки' })),
+    el('div', { class: 'row' }, el('button', { class: 'btn danger', onclick: removeService, text: 'Удалить службу' })),
+    errors.svc && el('div', { class: 'notice', text: errors.svc }));
+}
+
+// Приложение: как пускать трафик через VPN
+function appModeCard() {
+  const tun = !!state.appTun;
+  const setMode = async (on) => {
+    if (on && !ext.elevated) {
+      if (!(await ask('Для режима «Весь трафик» нужны права администратора. Перезапустить SafeBridge с ними? Система спросит разрешение.', 'Перезапустить'))) { render(); return; }
+      await ext.storage.local.set({ appTun: true });
+      await new Promise((r) => setTimeout(r, 400)); // настройки успевают записаться
+      try { await ext.bridge.call('RelaunchElevated'); } catch (e) { errors.appMode = e.message; render(); }
+      return;
+    }
+    await ext.storage.local.set({ appTun: on });
+    toast(on ? 'Включён режим «Весь трафик»' : 'Включён режим «Системный прокси»');
+    reload();
+  };
+  const opt = (on, title, desc) => el('label', { class: 'mode-opt' + (tun === on ? ' cur' : '') },
+    el('input', { type: 'radio', name: 'appMode', checked: tun === on, onchange: () => setMode(on) }),
+    el('span', {}, el('b', { text: title }), el('span', { class: 'muted small', text: desc })));
+  return el('div', { class: 'card stack', style: 'margin-bottom:16px' },
+    el('b', { text: 'Как пускать трафик через VPN' }),
+    el('div', { class: 'modes' },
+      opt(false, 'Системный прокси', 'Без прав администратора. Через VPN идут браузеры и программы, которые берут прокси из настроек системы. Игры и часть мессенджеров идут напрямую.'),
+      opt(true, 'Весь трафик (TUN)', 'Через VPN идёт весь компьютер, включая игры и мессенджеры. Нужны права администратора. Списки сайтов работают и здесь.')),
+    tun && !ext.elevated && el('div', { class: 'notice' }, 'Режим «Весь трафик» выбран, но SafeBridge запущен без прав администратора — сейчас работает системный прокси. ',
+      el('button', { class: 'btn quiet', onclick: () => setMode(true), text: 'Перезапустить с правами' })),
+    state.core?.tun && el('div', { class: 'muted small', text: 'Сейчас работает режим «Весь трафик».' }),
+    errors.appMode && el('div', { class: 'notice', text: errors.appMode }));
+}
+
+// Новая версия самого приложения (подписанный latest.json на GitHub)
+function appUpdateRow(withCheck) {
+  const a = state.updates?.app;
+  const busyNow = busy.appUpdate || state.busy?.appUpdate;
+  const line = !a ? 'ещё не проверялось'
+    : a.error ? `не удалось проверить: ${a.error}`
+    : a.available ? `вышла версия ${a.latest}` : 'установлена последняя версия';
+  return el('div', { class: 'updates' },
+    el('div', { class: 'upd-row' },
+      el('div', {}, el('b', { text: 'Приложение SafeBridge' }), el('div', { class: 'muted small', text: line })),
+      a?.available && (a.canUpdate
+        ? el('button', { class: 'btn primary', disabled: busyNow, onclick: () => act('appUpdate', {}, 'appUpdate', 'Новая версия установлена, SafeBridge перезапускается') }, busyNow ? spin() : `Обновить до ${a.latest}`)
+        : el('button', { class: 'btn primary', onclick: () => ext.tabs.create({ url: a.page }), text: 'Скачать' }))),
+    errors.appUpdate && el('div', { class: 'notice', text: errors.appUpdate }),
+    el('div', { class: 'muted small', text: 'SafeBridge проверяет новые версии раз в 6 часов и ставит их только с проверенной подписью.' }),
+    withCheck && el('div', { class: 'row' },
+      el('button', { class: 'btn', disabled: state.busy.updates || busy.checkUpdates, onclick: () => act('checkUpdates', {}, 'checkUpdates') },
+        state.busy.updates || busy.checkUpdates ? spin() : 'Проверить обновления')));
+}
+
+function appSection() {
+  const h = state.host;
+  const u = state.updates || {};
+  const coreLine = !u.checkedAt ? 'ещё не проверялось'
+    : u.core?.error ? `не удалось проверить: ${u.core.error}`
+    : u.core?.available ? `доступна версия ${u.core.latest}` : 'установлена последняя версия';
+  const autoCore = el('input', { type: 'checkbox', id: 'autoCore', checked: state.autoCore, onchange: (e) => act('setAutoCore', { on: e.target.checked }, 'autoCore') });
+  const items = [
+    ['Приложение', `SafeBridge ${ext.runtime.getManifest().version}${h ? ` (${h.os}/${h.arch})` : ''}`],
+    ['Ядро', h?.core ? `Xray ${h.core}` : (h?.coreError || '—')],
+    ['Состояние', state.core.running ? `работает${state.core.tun ? ', весь трафик (TUN)' : `, прокси 127.0.0.1:${state.core.httpPort || state.core.port}`}` : (state.coreError || 'остановлено')],
+  ];
+  const legacy = h?.variant === 'macos-legacy';
+  return el('section', { id: 'helper' },
+    el('h2', { text: 'Приложение и обновления' }),
+    el('div', { class: 'card stack' },
+      el('dl', { class: 'kv' }, items.map(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })])),
+      appUpdateRow(legacy),
+      legacy && el('div', { class: 'muted small', text: 'Версия для старых macOS (10.13–11): ядро Xray 26.2.6 — последнее, которое на них работает. Оно обновляется вместе с приложением.' }),
+      !legacy && el('div', { class: 'updates' },
+        el('div', { class: 'upd-row' },
+          el('div', {}, el('b', { text: 'Ядро Xray' }), el('div', { class: 'muted small', text: coreLine })),
+          u.core?.available && el('button', { class: 'btn primary', disabled: state.busy.updateCore || busy.updateCore,
+            onclick: () => act('updateCore', {}, 'updateCore', 'Ядро обновлено') }, state.busy.updateCore || busy.updateCore ? spin() : `Обновить до ${u.core.latest}`)),
+        el('label', { class: 'check' }, autoCore, el('span', { text: 'Обновлять ядро Xray автоматически' })),
+        el('div', { class: 'row' },
+          el('button', { class: 'btn', disabled: state.busy.updates || busy.checkUpdates, onclick: () => act('checkUpdates', {}, 'checkUpdates') },
+            state.busy.updates || busy.checkUpdates ? spin() : 'Проверить обновления'))),
+      ['updateCore', 'checkUpdates'].map((k) => errors[k] && el('div', { class: 'notice', text: errors[k] })),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn', disabled: busy.diag, onclick: async () => {
+          const r = await act('diag', {}, 'diag');
+          if (r) logText = `Каталог данных: ${r.dataDir}\n\n${(r.log || []).join('\n') || 'Журнал ядра пуст.'}`;
+          render();
+        } }, busy.diag ? spin() : 'Показать журнал ядра')),
+      logText && el('pre', { class: 'log', text: logText })));
+}
+
 function helperSection() {
+  if (isApp) return appSection();
   const h = state.host;
   const u = state.updates || {};
   const items = h ? [
@@ -358,7 +517,7 @@ function removeCard(h) {
     el('div', { class: 'muted small', text: 'Удалит помощник и ядро Xray с компьютера и снимет регистрацию во всех браузерах. Подписки и списки сайтов в расширении останутся.' }),
     el('div', { class: 'row' },
       el('button', { class: 'btn danger', disabled: busy.uninstallHelper, onclick: async () => {
-        if (!confirm('Удалить помощник SafeBridge с компьютера? VPN в браузере перестанет работать, пока вы не установите его снова.')) return;
+        if (!(await ask('Удалить помощник SafeBridge с компьютера? VPN в браузере перестанет работать, пока вы не установите его снова.', 'Удалить'))) return;
         const r = await act('uninstallHelper', {}, 'uninstallHelper');
         if (r) helperRemoved = true;
         render();
@@ -398,8 +557,26 @@ function highlightNav() {
   document.querySelectorAll('.side a').forEach((a) => a.classList.toggle('cur', a.getAttribute('href') === h));
 }
 window.addEventListener('hashchange', highlightNav);
+// вкладка в шапке — раздел, который сейчас на экране
+let spyRaf = 0;
+window.addEventListener('scroll', () => {
+  cancelAnimationFrame(spyRaf);
+  spyRaf = requestAnimationFrame(() => {
+    const top = (document.querySelector('.side')?.getBoundingClientRect().bottom || 0) + 40;
+    let cur = null;
+    for (const sec of document.querySelectorAll('main section[id]')) if (sec.getBoundingClientRect().top <= top) cur = sec.id;
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) cur = document.querySelector('main section[id]:last-of-type')?.id || cur;
+    if (cur) document.querySelectorAll('.side a').forEach((a) => a.classList.toggle('cur', a.getAttribute('href') === '#' + cur));
+  });
+}, { passive: true });
 
-document.querySelector('.side')?.append(madeBy());
+if (isApp) {
+  // приложение: окно не меняет размер — настройки в том же узком окне, «Назад» в шапке
+  const back = el('button', { class: 'btn quiet app-back', type: 'button', 'aria-label': 'Назад к серверам', onclick: () => globalThis.top.__sbNavigate?.('popup.html', 'popup') }, '← Назад');
+  document.querySelector('.brandrow')?.append(back);
+} else {
+  document.querySelector('.side')?.append(madeBy());
+}
 
 (async () => {
   await reload();

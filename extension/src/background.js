@@ -1,6 +1,6 @@
 import { ext, isFirefox, action, sessionStore } from './compat.js';
 import { MIN_HELPER, versionLess } from './common.js';
-import { HOST_NAME, DEFAULTS, load, save, allServers, buildPac, normalizeDomain, domainMatches, ACCOUNT, LATEST_URL, DOWNLOAD_BASE, upgradePresets } from './common.js';
+import { HOST_NAME, DEFAULTS, load, save, allServers, buildPac, normalizeDomain, domainMatches, ACCOUNT, LATEST_URL, DOWNLOAD_BASE, upgradePresets, LISTS_URL, LISTS_PERIOD_MIN, presetsOf, validateLists, listsChanges } from './common.js';
 
 // ---------- связь с помощником ----------
 
@@ -13,7 +13,7 @@ const pending = new Map();
 
 let core = { running: false, port: 0, selected: '' };
 let coreError = '';
-let busy = { refresh: false, ping: false, updates: false, updateCore: false, updateHelper: false, account: false };
+let busy = { refresh: false, ping: false, updates: false, updateCore: false, updateHelper: false, account: false, lists: false, appUpdate: false };
 let helperRestarting = false; // помощник сам перезапускается после обновления
 
 function isMissingHost(msg) {
@@ -338,7 +338,9 @@ const accountSite = (st) => {
 
 function randomNonce() {
   const b = crypto.getRandomValues(new Uint8Array(24));
-  return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const n = btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  // приложение: сайт вернёт итог входа на локальный адрес приложения 127.0.0.1:<порт>
+  return ext.appAuthPort ? `app-${ext.appAuthPort}-${n.slice(0, 40)}` : n;
 }
 
 async function accountFetch(st, path, init = {}) {
@@ -444,16 +446,75 @@ async function refreshAll() {
 ext.alarms.onAlarm.addListener((a) => {
   if (a.name === 'refresh') refreshAll();
   if (a.name === 'updates') checkUpdates(true).catch(() => {});
+  if (a.name === 'lists') checkLists(true).catch(() => {});
 });
+
+// ---------- наборы сайтов с GitHub ----------
+
+// Скачивает lists.json. Новая версия (rev больше действующей) ждёт, пока пользователь
+// нажмёт «Обновить списки»; при ручной проверке (auto = false) — ставится сразу.
+async function checkLists(auto = false) {
+  if (busy.lists) return null;
+  busy.lists = true;
+  notify();
+  try {
+    const st = await load();
+    // для проверок можно подставить локальный адрес; чужие адреса не принимаем
+    const base = /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(st.listsUrl || '') ? st.listsUrl : LISTS_URL;
+    const r = await fetch(`${base}?t=${Date.now()}`, { cache: 'no-store', credentials: 'omit' });
+    if (!r.ok) throw new Error(`GitHub ответил ${r.status}`);
+    const data = validateLists(await r.json());
+    const current = presetsOf(st);
+    if (data.rev <= current.rev) {
+      await save({ listsUpdate: null, listsCheckedAt: Date.now(), listsError: '' });
+      return { status: 'latest', rev: current.rev, updated: current.updated };
+    }
+    await save({ listsUpdate: { rev: data.rev, updated: data.updated, data, changes: listsChanges(current, data) }, listsCheckedAt: Date.now(), listsError: '' });
+    if (!auto) return await applyLists();
+    return { status: 'available', rev: data.rev, updated: data.updated };
+  } catch (e) {
+    await save({ listsCheckedAt: Date.now(), listsError: e.message });
+    if (!auto) throw e;
+    return null;
+  } finally {
+    busy.lists = false;
+    notify();
+  }
+}
+
+// Ставит найденную версию наборов и дополняет уже добавленные наборы новыми адресами.
+async function applyLists() {
+  const st = await load();
+  const u = st.listsUpdate;
+  if (!u?.data) return { status: 'latest', rev: presetsOf(st).rev };
+  const include = upgradePresets(st.include, u.data.vpn);
+  const exclude = upgradePresets(st.exclude, u.data.direct);
+  await save({
+    lists: u.data, listsUpdate: null,
+    include: [...st.include, ...include],
+    exclude: [...st.exclude, ...exclude],
+  });
+  if (include.length || exclude.length) await applyProxy();
+  return { status: 'updated', rev: u.rev, updated: u.updated, changes: u.changes, added: include.length + exclude.length };
+}
+
+async function scheduleLists() {
+  const a = await ext.alarms.get('lists');
+  if (!a) await ext.alarms.create('lists', { periodInMinutes: LISTS_PERIOD_MIN, delayInMinutes: LISTS_PERIOD_MIN });
+  const st = await load();
+  if (Date.now() - (st.listsCheckedAt || 0) > LISTS_PERIOD_MIN * 60000) {
+    setTimeout(() => checkLists(true).catch(() => {}), 15000);
+  }
+}
 
 // ---------- обновления помощника и ядра ----------
 
-const UPDATE_PERIOD_MIN = 24 * 60;
+const UPDATE_PERIOD_MIN = 6 * 60; // проверка новых версий — раз в 6 часов
 
 // Новая версия самого расширения. Только Chrome и другие Chromium: Firefox обновляет
 // подписанное дополнение сам. Версию берём из того же latest.json, что и помощник.
 async function checkExtension() {
-  if (isFirefox) return null;
+  if (isFirefox || ext.isApp) return null; // у приложения свои обновления
   const current = ext.runtime.getManifest().version;
   try {
     const r = await fetch(`${LATEST_URL}?t=${Date.now()}`, { cache: 'no-store', credentials: 'omit' });
@@ -475,10 +536,16 @@ async function checkUpdates(auto = false) {
   try {
     const extension = await checkExtension();
     if (extension) await save({ updates: { ...((await load()).updates || {}), extension } });
+    // приложение для компьютера: новая версия самого приложения (подписанный latest.json)
+    let app;
+    if (ext.isApp) {
+      app = await ext.bridge.call('AppCheck', core.port || 0).catch((e) => ({ error: e.message }));
+      await save({ updates: { ...((await load()).updates || {}), app, checkedAt: Date.now() } });
+    }
     if (hostInfo && versionLess(hostInfo.version, MIN_HELPER)) return (await load()).updates; // старый помощник не умеет
     if (!(await connect())) throw new Error(hostError || 'Помощник не подключён');
     const info = await call('checkUpdates', {}, 90000);
-    const updates = { ...info, extension: extension || undefined, checkedAt: Date.now() };
+    const updates = { ...info, extension: extension || undefined, app, checkedAt: Date.now() };
     await save({ updates });
     const st = await load();
     if (auto && st.autoCore && info.core?.available) await updateCore().catch(() => {});
@@ -570,10 +637,13 @@ let ready = null;
 async function init() {
   await scheduleRefresh();
   await scheduleUpdates();
+  await scheduleLists();
   // дополнить уже добавленные наборы сайтов адресами из новой версии (например, Gemini)
   const before = await load();
-  const extra = upgradePresets(before.include);
-  if (extra.length) await save({ include: [...before.include, ...extra] });
+  const presets = presetsOf(before);
+  const extra = upgradePresets(before.include, presets.vpn);
+  const extraEx = upgradePresets(before.exclude, presets.direct);
+  if (extra.length || extraEx.length) await save({ include: [...before.include, ...extra], exclude: [...before.exclude, ...extraEx] });
   const st = await load();
   await applyCore();
   const period = Math.max(15, st.intervalMin) * 60000;
@@ -601,6 +671,8 @@ async function getState() {
     ...st,
     // токен аккаунта нужен только фону — окнам расширения его не отдаём
     account: st.account ? { ...st.account, token: undefined } : null,
+    // окнам нужно только, что изменилось; сами наборы новой версии — после «Обновить списки»
+    listsUpdate: st.listsUpdate ? { rev: st.listsUpdate.rev, updated: st.listsUpdate.updated, changes: st.listsUpdate.changes } : null,
     host: hostInfo,
     hostError,
     hostMissing: !hostInfo && isMissingHost(hostError),
@@ -698,6 +770,13 @@ const handlers = {
     const after = await load();
     if (sender.tab?.id != null) setTimeout(() => ext.tabs.remove(sender.tab.id).catch(() => {}), 2500);
     return { ok: true, keys: after.account?.keys || 0 };
+  },
+
+  // приложение: включили или выключили VPN, режим «Весь трафик» или списки сайтов —
+  // ядру нужен новый конфиг (в режиме TUN маршрутизирует само ядро)
+  async appReapply() {
+    await applyCore();
+    return getState();
   },
 
   async accountSync() {
@@ -833,6 +912,32 @@ const handlers = {
   async checkUpdates() {
     await checkUpdates(false);
     return getState();
+  },
+
+  // приложение: скачать, проверить и поставить новую версию (затем оно перезапустится)
+  async appUpdate() {
+    if (!ext.isApp) throw new Error('Только в приложении');
+    busy.appUpdate = true;
+    notify();
+    try {
+      const ver = await ext.bridge.call('AppUpdate', core.port || 0);
+      return { ...(await getState()), appUpdated: ver };
+    } finally {
+      busy.appUpdate = false;
+      notify();
+    }
+  },
+
+  // «Обновить списки сайтов»: проверить GitHub и сразу поставить новую версию
+  async listsCheck() {
+    const result = await checkLists(false);
+    return { ...(await getState()), listsResult: result };
+  },
+
+  // «Обновить списки» из уведомления о новой версии
+  async listsApply() {
+    const result = await applyLists();
+    return { ...(await getState()), listsResult: result };
   },
 
   async updateCore() {

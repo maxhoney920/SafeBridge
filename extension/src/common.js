@@ -1,4 +1,5 @@
 import { ext } from './compat.js';
+import { LISTS } from './presets.js';
 // Общие константы и функции для фона, popup и настроек.
 
 export const HOST_NAME = 'com.vlessbridge.host';
@@ -58,6 +59,9 @@ export const ACCOUNT = {
 // По этому файлу расширение в Chrome узнаёт о своей новой версии (Firefox обновляется сам).
 // raw.githubusercontent.com отдаёт его с CORS, поэтому разрешения на сайт не нужны.
 export const LATEST_URL = 'https://raw.githubusercontent.com/maxhoney920/SafeBridge/downloads/latest.json';
+// новые версии наборов сайтов (собирается из presets.js при каждой сборке)
+export const LISTS_URL = 'https://raw.githubusercontent.com/maxhoney920/SafeBridge/downloads/lists.json';
+export const LISTS_PERIOD_MIN = 6 * 60; // проверка новых списков — раз в 6 часов
 // Предупреждать о конце подписки за столько дней
 export const EXPIRE_WARN_DAYS = 3;
 
@@ -161,6 +165,13 @@ export const DEFAULTS = {
   account: null,       // вход в ACCOUNT: {token, email, name, at, syncedAt, keys, renewUrl, expired, error}
   accountError: '',    // чем закончилась последняя попытка входа (not_linked, cancelled…)
   accountSite: '',     // другой адрес сайта аккаунта (только для проверки)
+  appTun: false,       // приложение: режим «Весь трафик» (TUN) вместо системного прокси
+  appTray: true,       // приложение на macOS: значок и быстрые настройки в строке меню
+  lists: null,         // скачанные наборы сайтов (lists.json), если новее встроенных
+  listsUpdate: null,   // найдена новая версия наборов, ждёт «Обновить списки»
+  listsCheckedAt: 0,
+  listsError: '',
+  listsUrl: '',        // только для проверок: локальный адрес lists.json
 };
 
 export async function load() {
@@ -241,53 +252,71 @@ function FindProxyForURL(url, host) {
 }`;
 }
 
-// Готовые наборы для списка «Через VPN».
-export const PRESETS_VPN = [
-  { name: 'YouTube', domains: ['youtube.com', 'youtu.be', 'googlevideo.com', 'ytimg.com', 'ggpht.com', 'youtube-nocookie.com', 'youtubei.googleapis.com', 'youtube.googleapis.com', 'jnn-pa.googleapis.com', 'youtubekids.com', 'yt.be'] },
-  { name: 'Instagram', domains: ['instagram.com', 'cdninstagram.com', 'fbcdn.net', 'ig.me'] },
-  { name: 'Facebook', domains: ['facebook.com', 'fb.com', 'fbcdn.net', 'messenger.com', 'facebook.net', 'fbsbx.com'] },
-  { name: 'X (Twitter)', domains: ['x.com', 'twitter.com', 'twimg.com', 't.co'] },
-  { name: 'Discord', domains: ['discord.com', 'discord.gg', 'discordapp.com', 'discordapp.net', 'discord.media', 'discordcdn.com'] },
-  { name: 'ChatGPT', domains: ['chatgpt.com', 'openai.com', 'oaistatic.com', 'oaiusercontent.com', 'sora.com'] },
-  { name: 'Claude', domains: ['claude.ai', 'anthropic.com', 'claudeusercontent.com', 'claude.com'] },
-  // Gemini, AI Studio, NotebookLM и другие сервисы Google AI. Страница открывается с gemini.google.com,
-  // а сами ответы идут через служебные адреса *-pa.googleapis.com и *.clients6.google.com:
-  // без них Google видит настоящий адрес и пишет, что сервис в вашей стране недоступен.
-  // Список сверен с v2fly/domain-list-community (google-deepmind) и itdoginfo/allow-domains.
-  { name: 'Gemini', main: ['gemini.google.com', 'aistudio.google.com', 'gemini.google', 'notebooklm.google.com', 'notebooklm.google', 'labs.google', 'ai.google.dev'],
-    domains: ['gemini.google.com', 'aistudio.google.com', 'gemini.google', 'bard.google.com', 'gemini.gstatic.com',
-      'generativelanguage.googleapis.com', 'robinfrontend-pa.googleapis.com', 'proactivebackend-pa.googleapis.com',
-      'geller-pa.googleapis.com', 'aisandbox-pa.googleapis.com', 'aida.googleapis.com', 'speechs3proto2-pa.googleapis.com',
-      'clients6.google.com', 'makersuite.google.com', 'ai.google.dev', 'ai.studio', 'generativeai.google',
-      'notebooklm.google.com', 'notebooklm.google', 'notebooklm-pa.googleapis.com', 'notebooklm.googleapis.com',
-      'labs.google', 'labs.google.com', 'jules.google', 'jules.google.com', 'deepmind.google', 'deepmind.com'] },
-  { name: 'TikTok', domains: ['tiktok.com', 'tiktokcdn.com', 'tiktokv.com', 'ttwstatic.com', 'byteoversea.com', 'ibytedtos.com', 'tiktokcdn-us.com', 'tiktokcdn-eu.com'] },
-  { name: 'Twitch', domains: ['twitch.tv', 'ttvnw.net', 'jtvnw.net', 'twitchcdn.net', 'twitchsvc.net', 'ext-twitch.tv'] },
-  { name: 'Spotify', domains: ['spotify.com', 'scdn.co', 'spotifycdn.com', 'spotilocal.com', 'pscdn.co'] },
-  { name: 'Netflix', domains: ['netflix.com', 'nflxvideo.net', 'nflximg.net', 'nflxext.com', 'nflxso.net'] },
-  { name: 'LinkedIn', domains: ['linkedin.com', 'licdn.com'] },
-  { name: 'Reddit', domains: ['reddit.com', 'redd.it', 'redditmedia.com', 'redditstatic.com'] },
-  { name: 'Medium', domains: ['medium.com', 'miro.medium.com'] },
-  { name: 'Telegram Web', domains: ['telegram.org', 't.me', 'telegram.me', 'telesco.pe'] },
-];
+// Встроенные наборы сайтов (presets.js). Новые версии приходят с GitHub (lists.json).
+export const BUILTIN_LISTS = LISTS;
+export const PRESETS_VPN = LISTS.vpn;
+export const PRESETS_DIRECT = LISTS.direct;
 
-// Готовые наборы для списка «Без VPN».
-export const PRESETS_DIRECT = [
-  { name: 'Все сайты .ru, .рф, .su', domains: ['ru', 'xn--p1ai', 'su'] },
-  { name: 'Госуслуги и налоги', domains: ['gosuslugi.ru', 'nalog.gov.ru', 'mos.ru', 'esia.gosuslugi.ru'] },
-  { name: 'Банки', domains: ['sberbank.ru', 'tbank.ru', 'tinkoff.ru', 'vtb.ru', 'alfabank.ru', 'gazprombank.ru', 'raiffeisen.ru'] },
-  { name: 'Маркетплейсы', domains: ['ozon.ru', 'wildberries.ru', 'wb.ru', 'avito.ru', 'market.yandex.ru'] },
-  { name: 'Яндекс', service: true, domains: ['yandex.ru', 'ya.ru', 'yandex.net', 'yastatic.net', 'yandex.com'] },
-  { name: 'VK и Mail.ru', service: true, domains: ['vk.com', 'vk.ru', 'userapi.com', 'vkuser.net', 'mail.ru', 'ok.ru'] },
-];
+// Наборы, которые сейчас действуют: скачанные, если они новее встроенных.
+export function presetsOf(st) {
+  const r = st?.lists;
+  return r && r.rev > LISTS.rev ? r : LISTS;
+}
 
+// Проверка скачанного lists.json: только понятные поля, адреса — через normalizeDomain,
+// разумные размеры (файл приходит из сети — ничего лишнего не принимаем).
+export function validateLists(j) {
+  if (!j || typeof j !== 'object' || !Number.isInteger(j.rev) || j.rev < 1) throw new Error('Неверный формат списков');
+  const updated = typeof j.updated === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(j.updated) ? j.updated : '';
+  const sets = (arr) => {
+    if (!Array.isArray(arr) || arr.length > 200) throw new Error('Неверный формат списков');
+    return arr.map((p) => {
+      if (!p || typeof p.name !== 'string' || !p.name.trim() || p.name.length > 60 || !Array.isArray(p.domains)) throw new Error('Неверный формат набора');
+      const norm = (l) => [...new Set(l.slice(0, 500).map((d) => normalizeDomain(String(d))).filter(Boolean))];
+      const domains = norm(p.domains);
+      if (!domains.length) throw new Error(`Пустой набор «${p.name}»`);
+      const out = { name: p.name.trim(), domains };
+      if (Array.isArray(p.main)) {
+        const main = norm(p.main).filter((d) => domains.includes(d));
+        if (main.length) out.main = main;
+      }
+      if (p.service === true) out.service = true;
+      return out;
+    });
+  };
+  return { rev: j.rev, updated, vpn: sets(j.vpn), direct: sets(j.direct) };
+}
+
+// Что изменилось в наборах: новые наборы и сколько адресов добавилось в старые.
+export function listsChanges(from, to) {
+  const out = [];
+  for (const key of ['vpn', 'direct']) {
+    const old = new Map((from[key] || []).map((p) => [p.name, new Set(p.domains)]));
+    for (const p of to[key] || []) {
+      const had = old.get(p.name);
+      if (!had) out.push({ name: p.name, isNew: true, added: p.domains.length });
+      else {
+        const added = p.domains.filter((d) => !had.has(d)).length;
+        if (added) out.push({ name: p.name, added });
+      }
+    }
+  }
+  return out;
+}
+
+export function listsSummary(changes) {
+  if (!changes?.length) return 'обновлены адреса в наборах';
+  const parts = changes.slice(0, 4).map((c) => (c.isNew ? `новый набор «${c.name}»` : `${c.name} (+${c.added})`));
+  if (changes.length > 4) parts.push(`ещё ${changes.length - 4}`);
+  return parts.join(', ');
+}
 export const PRESETS = PRESETS_VPN;
 
 // Набор, в который входит сайт. Возвращает набор только для «больших» сайтов,
 // а не для вспомогательных: на ggpht.com набор YouTube не предлагаем, а на youtube.com — да.
-export function presetFor(host, list) {
+export function presetFor(host, list, presets = LISTS) {
   // в «Без VPN» подставляем только наборы одного сервиса, а не «все банки» или зону .ru
-  const sets = list === 'exclude' ? PRESETS_DIRECT.filter((p) => p.service) : PRESETS_VPN;
+  const sets = list === 'exclude' ? presets.direct.filter((p) => p.service) : presets.vpn;
   const h = host.toLowerCase();
   return sets.find((p) => {
     // основные адреса набора: p.main, а если его нет — первые два домена

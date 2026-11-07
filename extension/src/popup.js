@@ -1,5 +1,5 @@
-import { ext, isFirefox } from './compat.js';
-import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, detectOldWindows, installSteps, madeBy, MIN_HELPER, versionLess, MODES, LIST_NAMES, presetFor, relatedDomains, ACCOUNT, ACCOUNT_ERRORS, expiringSubs, fmtLeft, subExpire } from './common.js';
+import { ext, isFirefox, isApp } from './compat.js';
+import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, detectOldWindows, installSteps, madeBy, MIN_HELPER, versionLess, MODES, LIST_NAMES, presetFor, presetsOf, listsSummary, relatedDomains, ACCOUNT, ACCOUNT_ERRORS, expiringSubs, fmtLeft, subExpire } from './common.js';
 
 const app = document.getElementById('app');
 let state = null;
@@ -18,7 +18,7 @@ async function act(type, data = {}, label = type) {
   render();
   try {
     const r = await send(type, data);
-    if (!r?.ok) throw new Error(r?.error || 'Нет ответа от расширения');
+    if (!r?.ok) throw new Error(r?.error || (isApp ? 'Нет ответа от приложения' : 'Нет ответа от расширения'));
     state = r.result;
   } catch (e) {
     actionError = e.message;
@@ -133,6 +133,19 @@ function accountBanners() {
       el('span', { text: `Вход в ${ACCOUNT.name} устарел — новые ключи не подтянутся.` }),
       el('button', { class: 'btn quiet', onclick: () => act('accountLogin', {}, 'login'), text: 'Войти' })));
   }
+  const app = isApp && state.updates?.app;
+  if (app?.available) {
+    out.push(el('div', { class: 'update' },
+      el('span', { text: `Вышла новая версия SafeBridge ${app.latest}.` }),
+      app.canUpdate
+        ? el('button', { class: 'btn quiet', disabled: pendingAction === 'appUpdate', onclick: () => act('appUpdate', {}, 'appUpdate'), text: pendingAction === 'appUpdate' ? 'Обновляю…' : 'Обновить' })
+        : el('button', { class: 'btn quiet', onclick: () => openUrl(app.page), text: 'Скачать' })));
+  }
+  if (state.listsUpdate) {
+    out.push(el('div', { class: 'update' },
+      el('span', { text: `Новые списки сайтов: ${listsSummary(state.listsUpdate.changes)}.` }),
+      el('button', { class: 'btn quiet', disabled: pendingAction === 'lists', onclick: () => act('listsApply', {}, 'lists'), text: 'Обновить списки' })));
+  }
   const exp = expiringSubs(state)[0];
   if (exp) {
     const own = exp.sub.account;
@@ -210,7 +223,7 @@ function siteRow() {
   const list = LIST_NAMES[key];
   // У больших сервисов видео и картинки лежат на других доменах (у YouTube — googlevideo.com,
   // ytimg.com), поэтому добавляем и убираем весь набор сервиса, а не один домен.
-  const preset = presetFor(tabHost, key);
+  const preset = presetFor(tabHost, key, presetsOf(state));
   const addSet = preset ? preset.domains : [siteDomain(tabHost)];
   const dropSet = preset && preset.domains.includes(match) ? preset.domains : [match];
   const add = () => act('addSite', { list: key, domains: addSet }, 'site');

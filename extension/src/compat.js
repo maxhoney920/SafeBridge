@@ -1,6 +1,8 @@
 // Один код для Chrome и Firefox: в Firefox API живёт в `browser` и возвращает промисы,
 // а кнопка расширения в Manifest V2 называется browserAction.
 export const ext = globalThis.browser ?? globalThis.chrome;
+// приложение для компьютера (desktop/) подменяет этот файл своим, с isApp = true
+export const isApp = false;
 export const isFirefox = typeof globalThis.browser !== 'undefined' && /Firefox\//.test(navigator.userAgent);
 export const action = ext.action ?? ext.browserAction;
 

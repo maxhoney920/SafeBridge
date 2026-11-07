@@ -128,7 +128,7 @@ details.alt .cmd { margin: 6px 0 4px; }
 .cmd {
   display: block; font: 12px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm);
-  padding: 8px 10px; overflow-wrap: anywhere; user-select: all;
+  padding: 8px 10px; word-break: break-word; overflow-wrap: anywhere; user-select: all;
 }
 
 .update.warn { background: var(--accent-soft); color: var(--ink); }
@@ -140,7 +140,7 @@ details.alt .cmd { margin: 6px 0 4px; }
   padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--warn);
   border-radius: var(--radius-sm); background: var(--surface); line-height: 1.4;
 }
-.related-list { color: var(--muted); overflow-wrap: anywhere; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+.related-list { color: var(--muted); word-break: break-word; overflow-wrap: anywhere; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
 .related-actions { display: flex; align-items: center; gap: 8px; }
 
 /* вход в аккаунт VPN-сервиса */
@@ -153,3 +153,7 @@ details.alt .cmd { margin: 6px 0 4px; }
 .or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
 .notice-actions { margin-top: 6px; }
 .notice-actions .btn.quiet { color: var(--bad); padding-left: 0; text-decoration: underline; }
+
+/* приложение: окно шире и выше всплывающего окна браузера */
+html.app body { width: auto; }
+html.app .servers { max-height: none; }
