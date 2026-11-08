@@ -8,6 +8,7 @@ package tray
 #include <stdlib.h>
 void sbTraySet(const void *png, int pngLen, const char *menuJSON, const char *tooltip);
 void sbTrayRemove(void);
+const char *sbFixWindowButtons(void);
 */
 import "C"
 
@@ -49,4 +50,12 @@ func sbTrayClick(id *C.char) {
 	if OnClick != nil {
 		go OnClick(s)
 	}
+}
+
+// FixWindowButtons показывает кнопки окна, если система их скрыла (macOS 10.13), и
+// возвращает их состояние до исправления — для журнала.
+func FixWindowButtons() string {
+	c := C.sbFixWindowButtons()
+	defer C.free(unsafe.Pointer(c))
+	return C.GoString(c)
 }

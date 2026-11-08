@@ -22,7 +22,7 @@ type AppInfo struct {
 	Current   string `json:"current"`
 	Latest    string `json:"latest,omitempty"`
 	Available bool   `json:"available"`
-	CanUpdate bool   `json:"canUpdate"` // можно обновить из приложения (иначе — скачать вручную)
+	CanUpdate bool   `json:"canUpdate"`         // можно обновить из приложения (иначе — скачать вручную)
 	Pending   bool   `json:"pending,omitempty"` // новая версия вышла, но сборки для этой системы ещё нет
 	Page      string `json:"page,omitempty"`
 	Error     string `json:"error,omitempty"`

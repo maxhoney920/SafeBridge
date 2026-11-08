@@ -78,3 +78,27 @@ void sbTrayRemove(void) {
         }
     });
 }
+
+// Кнопки окна («закрыть», «свернуть», «развернуть»): на macOS 10.13 они пропадали.
+// Показываем их явно и возвращаем состояние для журнала.
+const char *sbFixWindowButtons(void) {
+    __block NSString *info = @"";
+    void (^fix)(void) = ^{
+        NSMutableString *s = [NSMutableString string];
+        for (NSWindow *w in [NSApp windows]) {
+            if (![w isVisible] && ![w isMiniaturized]) continue;
+            w.styleMask |= NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable;
+            NSWindowButton kinds[] = { NSWindowCloseButton, NSWindowMiniaturizeButton, NSWindowZoomButton };
+            [s appendFormat:@"окно mask=%lu", (unsigned long)w.styleMask];
+            for (int i = 0; i < 3; i++) {
+                NSButton *b = [w standardWindowButton:kinds[i]];
+                [s appendFormat:@" кнопка%d=%@%@", i, b == nil ? @"нет" : (b.isHidden ? @"скрыта" : @"видна"), b.superview == nil ? @"(вне окна)" : @""];
+                if (b != nil) [b setHidden:NO];
+            }
+            [s appendString:@"; "];
+        }
+        info = s;
+    };
+    if ([NSThread isMainThread]) fix(); else dispatch_sync(dispatch_get_main_queue(), fix);
+    return strdup([info UTF8String]);
+}

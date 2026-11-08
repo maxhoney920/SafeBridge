@@ -6,10 +6,12 @@ import (
 	"context"
 	"embed"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 
+	"github.com/safebridge/desktop/internal/tray"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
 	"github.com/wailsapp/wails/v2/pkg/menu/keys"
@@ -61,8 +63,15 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 25, G: 33, B: 44, A: 255},
 		AssetServer:      &assetserver.Options{Assets: assets},
 		OnStartup:        func(c context.Context) { ctx = c },
-		OnShutdown:       func(context.Context) { app.shutdown() },
-		Menu:             appMenu,
+		OnDomReady: func(context.Context) {
+			if runtime.GOOS == "darwin" {
+				if info := tray.FixWindowButtons(); info != "" {
+					log.Println("кнопки окна:", info)
+				}
+			}
+		},
+		OnShutdown: func(context.Context) { app.shutdown() },
+		Menu:       appMenu,
 		// со значком в строке меню закрытие окна только прячет SafeBridge (VPN продолжает
 		// работать), а выйти можно из меню значка или по ⌘Q
 		HideWindowOnClose: trayWanted(),

@@ -7,3 +7,5 @@ const Available = false
 func Set(on bool, tooltip string, items []Item) {}
 
 func Remove() {}
+
+func FixWindowButtons() string { return "" }

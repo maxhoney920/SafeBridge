@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -55,6 +56,12 @@ func NewApp() *App {
 	sysproxy.Init(host.DataDir())
 	sysproxy.Recover() // если прошлый запуск упал и не вернул настройки прокси
 	if useService() {
+		// журнал окна (ядро пишет свой в службе)
+		os.MkdirAll(host.DataDir(), 0o700)
+		if f, err := os.OpenFile(filepath.Join(host.DataDir(), "app.log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600); err == nil {
+			log.SetOutput(f)
+			log.Printf("SafeBridge %s (окно), %s/%s", version, runtime.GOOS, runtime.GOARCH)
+		}
 		// macOS: ядро с правами администратора работает в службе, окно — от имени пользователя
 		a.svcc = &svc.Client{Path: serviceSocket(), Emit: func(n, d string) { a.emit(n, d) }}
 		a.core = a.svcc

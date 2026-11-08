@@ -215,13 +215,15 @@ var privateCIDRs = []string{"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0
 	"172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/4", "::1/128", "fc00::/7", "fe80::/10"}
 
 type coreLayout struct {
-	port     int
-	httpPort int            // HTTP-вход для системного прокси (PAC в Windows/macOS понимают его надёжнее SOCKS)
-	testPort map[string]int // сервер → локальный SOCKS-порт для пинга
-	tags     []string
-	selected string
-	tun      *TunOptions // режим «весь трафик»: TUN-адаптер Xray вместо системного прокси
-	iface    string      // старые macOS: сетевая карта, к которой привязаны соединения ядра
+	port      int
+	httpPort  int            // HTTP-вход для системного прокси (PAC в Windows/macOS понимают его надёжнее SOCKS)
+	testPort  map[string]int // сервер → локальный SOCKS-порт для пинга
+	tags      []string
+	selected  string
+	tun       *TunOptions // режим «весь трафик»: TUN-адаптер Xray вместо системного прокси
+	iface     string      // старые macOS: сетевая карта, к которой привязан выход «напрямую»
+	gateway   string      // старые macOS: роутер — через него маршруты к VPN-серверам
+	serverIPs []string    // старые macOS: адреса VPN-серверов (маршруты мимо адаптера)
 }
 
 // TunOptions — режим «весь трафик». Списки сайтов работают через сниффинг доменов:
@@ -303,7 +305,9 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 	outbounds = append(outbounds, map[string]any{"tag": "direct", "protocol": "freedom"})
 	if l.iface != "" {
 		for _, ob := range outbounds {
-			bindOutbound(ob.(map[string]any), l.iface)
+			if m := ob.(map[string]any); m["tag"] == "direct" {
+				bindOutbound(m, l.iface)
+			}
 		}
 	}
 	rules = append(rules,
@@ -514,11 +518,11 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 			return c.Status(), err
 		}
 		if isMacLegacy() {
-			iface, err := defaultInterface()
+			iface, gw, err := defaultRoute()
 			if err != nil {
 				return c.Status(), err
 			}
-			l.iface = iface
+			l.iface, l.gateway, l.serverIPs = iface, gw, serverIPs(servers)
 		}
 	}
 	cfg, err := buildConfig(servers, &l)
@@ -611,7 +615,7 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 		time.Sleep(50 * time.Millisecond)
 	}
 	if l.tun != nil && isMacLegacy() {
-		if err := legacyRoutesUp(tunName()); err != nil {
+		if err := legacyRoutesUp(tunName(), l); err != nil {
 			c.Stop()
 			return c.Status(), err
 		}
@@ -623,6 +627,7 @@ func (c *Core) Stop() {
 	c.mu.Lock()
 	cmd, done := c.cmd, c.done
 	legacyTun := c.layout.tun != nil && isMacLegacy()
+	layout := c.layout
 	if cmd != nil {
 		c.stopping = true
 	}
@@ -631,7 +636,7 @@ func (c *Core) Stop() {
 		return
 	}
 	if legacyTun {
-		defer legacyRoutesDown(tunName())
+		defer legacyRoutesDown(tunName(), layout)
 	}
 	terminate(cmd)
 	select {
