@@ -178,6 +178,55 @@ function bridgeCard(servers) {
   );
 }
 
+// Приложение для Windows: системный прокси или весь трафик (TUN) — две кнопки над подключением
+let tunConfirm = false;
+function appModeSwitch() {
+  const tun = !!state.appTun && !!ext.elevated;
+  const pick = async (on) => {
+    if (on === tun && !(on && !ext.elevated)) return;
+    if (on && !ext.elevated) { tunConfirm = true; render(); return; }
+    tunConfirm = false;
+    pendingAction = 'appMode';
+    render();
+    try {
+      await ext.storage.local.set({ appTun: on });
+      await new Promise((r) => setTimeout(r, 600)); // ядро перезапускается с новым режимом
+    } finally {
+      pendingAction = '';
+      reload();
+    }
+  };
+  const relaunch = async () => {
+    tunConfirm = false;
+    pendingAction = 'appMode';
+    render();
+    try {
+      await ext.storage.local.set({ appTun: true });
+      await new Promise((r) => setTimeout(r, 400)); // настройка успевает записаться
+      await ext.bridge.call('RelaunchElevated');
+    } catch (e) {
+      actionError = e.message;
+    } finally {
+      pendingAction = '';
+      render();
+    }
+  };
+  const btn = (on, text, title) => el('button', {
+    class: 'app-mode-btn' + (tun === on ? ' cur' : ''), 'aria-pressed': String(tun === on), title,
+    disabled: pendingAction === 'appMode', onclick: () => pick(on), text,
+  });
+  return el('div', { class: 'app-mode' },
+    el('div', { class: 'app-mode-btns', role: 'group', 'aria-label': 'Как пускать трафик через VPN' },
+      btn(false, 'Системный прокси', 'Браузеры и программы, которые берут прокси из настроек Windows. Без прав администратора.'),
+      btn(true, 'Весь трафик (TUN)', 'Весь компьютер, включая игры и мессенджеры. Нужны права администратора.')),
+    tunConfirm && el('div', { class: 'app-mode-ask' },
+      el('span', { text: 'Для режима «Весь трафик» SafeBridge перезапустится с правами администратора — Windows спросит разрешение.' }),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn primary', onclick: relaunch, text: 'Перезапустить' }),
+        el('button', { class: 'btn quiet', onclick: () => { tunConfirm = false; render(); }, text: 'Отмена' }))),
+    !tunConfirm && state.appTun && !ext.elevated && el('div', { class: 'muted small', text: 'Выбран «Весь трафик», но нет прав администратора — работает системный прокси.' }));
+}
+
 // IP, с которым сайты видят пользователя, и сколько времени подключены к серверу
 function connLine() {
   const c = state.conn;
@@ -378,7 +427,9 @@ function serverList(servers) {
 
 function viewMain() {
   const servers = allServers(state);
-  const nodes = [bridgeCard(servers)];
+  const nodes = [];
+  if (isApp && ext.caps && !ext.caps.tunOnly) nodes.push(appModeSwitch());
+  nodes.push(bridgeCard(servers));
   if (state.enabled && !state.core.running && state.coreError) nodes.push(el('div', { class: 'notice', text: state.coreError }));
   if (state.proxyControl === 'controlled_by_other_extensions') {
     nodes.push(el('div', { class: 'notice', text: 'Настройками прокси управляет другое расширение. Отключите его, чтобы SafeBridge заработал.' }));

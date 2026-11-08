@@ -191,7 +191,12 @@ func (a *App) AuthPort() int { return a.local.port }
 
 // IsElevated — может ли ядро включить режим «Весь трафик» (права администратора есть
 // у этого процесса или у службы).
-func (a *App) IsElevated() bool { return a.svcc != nil || host.IsElevated() }
+func (a *App) IsElevated() bool {
+	if os.Getenv("SAFEBRIDGE_FAKE_NOT_ELEVATED") != "" { // для проверок интерфейса
+		return false
+	}
+	return a.svcc != nil || host.IsElevated()
+}
 
 // RelaunchElevated перезапускает приложение с правами администратора (для режима TUN).
 func (a *App) RelaunchElevated() error {
