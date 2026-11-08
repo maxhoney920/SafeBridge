@@ -287,6 +287,16 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 			"sniffing": map[string]any{"enabled": true, "destOverride": []string{"http", "tls", "quic"}, "routeOnly": true},
 		})
 	}
+	if t := l.tun; t != nil && (t.Mode == "include" || t.Mode == "exclude") {
+		// Режимы со списками: распознанный домен подставляется вместо IP. Тогда адрес сайта,
+		// который идёт через VPN, узнаёт сервер, а не DNS провайдера (тот может подменять
+		// адреса заблокированных сайтов).
+		for _, in := range inbounds {
+			if m := in.(map[string]any); m["tag"] == "tun" {
+				m["sniffing"] = map[string]any{"enabled": true, "destOverride": []string{"http", "tls", "quic"}}
+			}
+		}
+	}
 	// P2P (BitTorrent, uTP) — всегда напрямую, мимо VPN-сервера: сервисы запрещают торренты
 	// через свои серверы. Правило первое и не настраивается.
 	rules := []any{map[string]any{"protocol": []string{"bittorrent"}, "outboundTag": "direct"}}
@@ -302,7 +312,8 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 			rules = append(rules, map[string]any{"inboundTag": []string{in}, "outboundTag": s.ID})
 		}
 	}
-	outbounds = append(outbounds, map[string]any{"tag": "direct", "protocol": "freedom"})
+	outbounds = append(outbounds, map[string]any{"tag": "direct", "protocol": "freedom"},
+		map[string]any{"tag": "block", "protocol": "blackhole"})
 	if l.iface != "" {
 		for _, ob := range outbounds {
 			if m := ob.(map[string]any); m["tag"] == "direct" {
@@ -323,10 +334,20 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 			if d := xrayDomains(t.Include); len(d) > 0 {
 				rules = append(rules, map[string]any{"inboundTag": []string{"tun"}, "domain": d, "outboundTag": l.selected})
 			}
-			rules = append(rules, map[string]any{"inboundTag": []string{"tun"}, "outboundTag": "direct"})
+			if ip := serviceIPs(t.Include); len(ip) > 0 {
+				rules = append(rules, map[string]any{"inboundTag": []string{"tun"}, "ip": ip, "outboundTag": l.selected})
+			}
+			// QUIC (HTTP/3), у которого не удалось узнать сайт, не пускаем напрямую: браузер
+			// повторит запрос по обычному HTTPS, а там сайт распознаётся и уходит в VPN
+			rules = append(rules,
+				map[string]any{"inboundTag": []string{"tun"}, "network": "udp", "port": "443", "outboundTag": "block"},
+				map[string]any{"inboundTag": []string{"tun"}, "outboundTag": "direct"})
 		case "exclude":
 			if d := xrayDomains(t.Exclude); len(d) > 0 {
 				rules = append(rules, map[string]any{"inboundTag": []string{"tun"}, "domain": d, "outboundTag": "direct"})
+			}
+			if ip := serviceIPs(t.Exclude); len(ip) > 0 {
+				rules = append(rules, map[string]any{"inboundTag": []string{"tun"}, "ip": ip, "outboundTag": "direct"})
 			}
 			rules = append(rules, map[string]any{"inboundTag": []string{"tun"}, "outboundTag": l.selected})
 		default:
@@ -355,6 +376,23 @@ func xrayDomains(list []string) []string {
 			continue
 		}
 		out = append(out, "domain:"+d)
+	}
+	return out
+}
+
+// Приложения, которые подключаются к серверам по IP, без имени сайта (его не узнать по
+// трафику): для них к домену из списка добавляются адреса сервиса. Telegram — по
+// https://core.telegram.org/resources/cidr.txt
+var serviceNets = map[string][]string{
+	"telegram.org": {"91.108.4.0/22", "91.108.8.0/22", "91.108.12.0/22", "91.108.16.0/22", "91.108.20.0/22",
+		"91.108.56.0/22", "91.105.192.0/23", "149.154.160.0/20", "185.76.151.0/24",
+		"2001:b28:f23c::/48", "2001:b28:f23d::/48", "2001:b28:f23f::/48", "2001:67c:4e8::/48", "2a0a:f280::/32"},
+}
+
+func serviceIPs(list []string) []string {
+	var out []string
+	for _, d := range list {
+		out = append(out, serviceNets[strings.TrimSpace(strings.ToLower(d))]...)
 	}
 	return out
 }

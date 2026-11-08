@@ -666,8 +666,48 @@ ready = init().catch((e) => console.warn('init:', e));
 
 // ---------- сообщения от popup и настроек ----------
 
+// ---------- адрес и время подключения ----------
+// Когда VPN включён: с какого момента подключены к текущему серверу и какой внешний IP
+// видят сайты. IP спрашивает помощник (ядро) через выбранный сервер.
+let connFetch = null;
+async function connInfo(st) {
+  const active = !!st.enabled && !!core.running && !coreError;
+  let { conn = null } = await sessionStore.get(['conn']);
+  if (!active) {
+    if (conn) await sessionStore.set({ conn: null });
+    return null;
+  }
+  const server = core.selected || st.selected;
+  if (!conn || conn.server !== server) {
+    conn = { server, since: Date.now() };
+    await sessionStore.set({ conn });
+  }
+  if (!conn.ip && !connFetch && Date.now() - (conn.tried || 0) > 30000) {
+    conn = { ...conn, tried: Date.now() };
+    await sessionStore.set({ conn });
+    connFetch = (async () => {
+      try {
+        const r = await call('ip', {}, 25000);
+        const { conn: cur } = await sessionStore.get(['conn']);
+        if (cur && cur.server === server && r?.ip) {
+          await sessionStore.set({ conn: { ...cur, ip: r.ip, country: r.country || '', city: r.city || '' } });
+          notify();
+        }
+      } catch {
+        // старый помощник без команды ip или сайт не ответил — покажем только время
+        const { conn: cur } = await sessionStore.get(['conn']);
+        if (cur && cur.server === server && !cur.ipError) { await sessionStore.set({ conn: { ...cur, ipError: true } }); notify(); }
+      } finally {
+        connFetch = null;
+      }
+    })();
+  }
+  return conn;
+}
+
 async function getState() {
   const st = await load();
+  const conn = await connInfo(st);
   const { pings = {}, pingedAt = 0 } = await sessionStore.get(['pings', 'pingedAt']);
   let control = 'controllable_by_this_extension';
   if (!isFirefox) {
@@ -689,6 +729,7 @@ async function getState() {
     busy,
     pings,
     pingedAt,
+    conn,
     proxyControl: control,
   };
 }

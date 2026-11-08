@@ -7,7 +7,7 @@
 // набор узнаётся на странице и в списке пользователя; по умолчанию первые два адреса);
 // service — набор одного сервиса (только такие предлагаются в «Без VPN» со страницы).
 export const LISTS = {
-  rev: 3,
+  rev: 4,
   updated: '2026-11-08',
   vpn: [
     { name: 'YouTube', domains: ['youtube.com', 'youtu.be', 'googlevideo.com', 'ytimg.com', 'ggpht.com', 'youtube-nocookie.com', 'youtubei.googleapis.com', 'youtube.googleapis.com', 'jnn-pa.googleapis.com', 'youtubekids.com', 'yt.be'] },
@@ -43,7 +43,9 @@ export const LISTS = {
     { name: 'LinkedIn', domains: ['linkedin.com', 'licdn.com'] },
     { name: 'Reddit', domains: ['reddit.com', 'redd.it', 'redditmedia.com', 'redditstatic.com'] },
     { name: 'Medium', domains: ['medium.com', 'miro.medium.com'] },
-    { name: 'Telegram Web', domains: ['telegram.org', 't.me', 'telegram.me', 'telesco.pe'] },
+    // в приложении (режим «весь трафик») к telegram.org добавляются и IP-адреса Telegram:
+    // программа Telegram подключается к серверам по IP
+    { name: 'Telegram', domains: ['telegram.org', 't.me', 'telegram.me', 'telesco.pe', 'web.telegram.org', 'cdn-telegram.org'] },
     // Торрент-трекеры. Адреса сверены с v2fly/domain-list-community (rutracker) и
     // itdoginfo/allow-domains (Russia/inside). t-ru.org — анонсер RuTracker (bt*.t-ru.org):
     // через него торрент-клиент узнаёт о раздающих.

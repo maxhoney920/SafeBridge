@@ -255,6 +255,11 @@ func (h *Host) dispatch(req request) (any, error) {
 		}()
 		return map[string]any{"removed": true, "dataDir": dataDir()}, nil
 
+	case "ip":
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		return exitIP(ctx, h.proxyPort())
+
 	case "stop":
 		h.core.Stop()
 		return h.core.Status(), nil

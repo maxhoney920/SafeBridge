@@ -173,9 +173,40 @@ function bridgeCard(servers) {
     shieldBadge(),
     el('span', { class: 'state', text: stateText }),
     el('span', { class: 'server', text: sel ? `${sel.name}${ms > 0 ? `   ${ms} мс` : ''}` : 'Сервер не выбран' }),
+    active && pendingAction !== 'toggle' && connLine(),
     el('span', { class: 'knob', 'aria-hidden': 'true' }),
   );
 }
+
+// IP, с которым сайты видят пользователя, и сколько времени подключены к серверу
+function connLine() {
+  const c = state.conn;
+  if (!c) return null;
+  const where = c.ip ? `IP ${c.ip}${c.country ? ' · ' + countryName(c.country) : ''}` : c.ipError ? '' : 'IP определяется…';
+  return el('span', { class: 'conn' },
+    where && el('span', { class: 'conn-ip', text: where }),
+    el('span', { class: 'conn-time', 'data-since': String(c.since), title: 'Время подключения', text: fmtElapsed(Date.now() - c.since) }));
+}
+
+function countryName(code) {
+  try {
+    return new Intl.DisplayNames(['ru'], { type: 'region' }).of(code) || code;
+  } catch {
+    return code;
+  }
+}
+
+function fmtElapsed(ms) {
+  const t = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+  const p = (n) => String(n).padStart(2, '0');
+  const d = Math.floor(h / 24);
+  return d > 0 ? `${d} д ${p(h % 24)}:${p(m)}:${p(sec)}` : `${p(h)}:${p(m)}:${p(sec)}`;
+}
+
+setInterval(() => {
+  for (const n of document.querySelectorAll('.conn-time')) n.textContent = fmtElapsed(Date.now() - Number(n.getAttribute('data-since')));
+}, 500);
 
 // Щит из логотипа SafeBridge: серый — выключено, янтарный — подключено
 function shieldBadge() {

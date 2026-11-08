@@ -209,6 +209,11 @@ func (h *Host) dispatch(req request) (any, error) {
 		// в приложении помощника нет: обновляется само приложение
 		return nil, errors.New("в приложении эта команда не нужна")
 
+	case "ip":
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		return exitIP(ctx, h.proxyPort())
+
 	case "stop":
 		h.core.Stop()
 		return h.core.Status(), nil
