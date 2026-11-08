@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -78,12 +79,17 @@ func main() {
 // он пишет с «?.», которого Safari до 13.1 не знает, и тогда окно не связывается с
 // приложением. bridge.js подключает эту копию, если встроенный скрипт не сработал.
 func wailsRuntime(dir string) {
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/wailsapp/wails/v2").Output()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "bundle: не найден модуль Wails:", err)
+	// go mod download сам скачает модуль, если его ещё нет в кэше (чистая машина CI)
+	out, err := exec.Command("go", "mod", "download", "-json", "github.com/wailsapp/wails/v2").Output()
+	var mod struct{ Dir, Error string }
+	if err == nil {
+		err = json.Unmarshal(out, &mod)
+	}
+	if err != nil || mod.Dir == "" {
+		fmt.Fprintln(os.Stderr, "bundle: не найден модуль Wails:", err, mod.Error)
 		os.Exit(1)
 	}
-	src := filepath.Join(strings.TrimSpace(string(out)), "internal", "frontend", "runtime", "runtime_prod_desktop.js")
+	src := filepath.Join(mod.Dir, "internal", "frontend", "runtime", "runtime_prod_desktop.js")
 	code, err := os.ReadFile(src)
 	if err != nil {
 		panic(err)
