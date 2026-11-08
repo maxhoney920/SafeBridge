@@ -34,7 +34,7 @@ go_win7() { # -> путь к go из пропатченного набора
   if [ ! -x "$dir/bin/go" ]; then
     echo "  ↓ go-win7 $GO_WIN7_VERSION" >&2
     mkdir -p .cache
-    curl -fsSL -o "$dir.zip.part" "https://github.com/XTLS/go-win7/releases/download/patched-$GO_WIN7_VERSION/go-for-win7-linux-amd64.zip"
+    curl -fsSL --retry 5 --retry-delay 5 -o "$dir.zip.part" "https://github.com/XTLS/go-win7/releases/download/patched-$GO_WIN7_VERSION/go-for-win7-linux-amd64.zip"
     got=$(sha256sum "$dir.zip.part" | cut -d' ' -f1)
     if [ "$got" != "$GO_WIN7_SHA256" ]; then
       echo "  ✗ контрольная сумма go-win7 не совпала ($got)" >&2; rm -f "$dir.zip.part"; exit 1
@@ -57,9 +57,9 @@ fetch_core() { # goos goarch -> путь к бинарнику xray
   if [ ! -f "$arc" ]; then
     echo "  ↓ $name.zip" >&2
     url="https://github.com/XTLS/Xray-core/releases/download/v$XRAY_VERSION/$name.zip"
-    curl -fsSL -o "$arc.part" "$url"
+    curl -fsSL --retry 5 --retry-delay 5 -o "$arc.part" "$url"
     # сверяем SHA-256 с официальным файлом контрольных сумм XTLS
-    want=$(curl -fsSL "$url.dgst" | sed -n 's/^SHA2-256= *//p' | tr -d '[:space:]')
+    want=$(curl -fsSL --retry 5 --retry-delay 5 "$url.dgst" | sed -n 's/^SHA2-256= *//p' | tr -d '[:space:]')
     got=$(sha256sum "$arc.part" | cut -d' ' -f1)
     if [ -z "$want" ] || [ "$want" != "$got" ]; then
       echo "  ✗ контрольная сумма $name.zip не совпала (ожидалось ${want:-?}, получено $got)" >&2

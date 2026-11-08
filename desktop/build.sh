@@ -22,7 +22,7 @@ go_win7() {
   if [ ! -x "$dir/bin/go" ]; then
     echo "  ↓ go-win7 $GO_WIN7_VERSION" >&2
     mkdir -p "$(dirname "$dir")"
-    curl -fsSL -o "$dir.zip.part" "https://github.com/XTLS/go-win7/releases/download/patched-$GO_WIN7_VERSION/go-for-win7-linux-amd64.zip"
+    curl -fsSL --retry 5 --retry-delay 5 -o "$dir.zip.part" "https://github.com/XTLS/go-win7/releases/download/patched-$GO_WIN7_VERSION/go-for-win7-linux-amd64.zip"
     [ "$(sha256sum "$dir.zip.part" | cut -d' ' -f1)" = "$GO_WIN7_SHA256" ] || { echo "контрольная сумма go-win7 не совпала" >&2; rm -f "$dir.zip.part"; exit 1; }
     rm -rf "$dir" && mkdir -p "$dir" && unzip -q "$dir.zip.part" -d "$dir" && rm -f "$dir.zip.part"
   fi
