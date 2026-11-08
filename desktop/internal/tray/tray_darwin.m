@@ -85,15 +85,33 @@ const char *sbFixWindowButtons(void) {
     __block NSString *info = @"";
     void (^fix)(void) = ^{
         NSMutableString *s = [NSMutableString string];
-        for (NSWindow *w in [NSApp windows]) {
-            if (![w isVisible] && ![w isMiniaturized]) continue;
+        NSArray *wins = [NSApp windows];
+        [s appendFormat:@"окон %lu: ", (unsigned long)wins.count];
+        for (NSWindow *w in wins) {
+            // строка меню и служебные окна — без полосы заголовка, их не трогаем
+            if (!(w.styleMask & NSWindowStyleMaskTitled) && [w standardWindowButton:NSWindowCloseButton] == nil) {
+                [s appendFormat:@"[%@ без заголовка] ", NSStringFromClass([w class])];
+                continue;
+            }
             w.styleMask |= NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable;
             NSWindowButton kinds[] = { NSWindowCloseButton, NSWindowMiniaturizeButton, NSWindowZoomButton };
-            [s appendFormat:@"окно mask=%lu", (unsigned long)w.styleMask];
+            [s appendFormat:@"%@ видно=%d mask=%lu", NSStringFromClass([w class]), w.isVisible, (unsigned long)w.styleMask];
             for (int i = 0; i < 3; i++) {
                 NSButton *b = [w standardWindowButton:kinds[i]];
                 [s appendFormat:@" кнопка%d=%@%@", i, b == nil ? @"нет" : (b.isHidden ? @"скрыта" : @"видна"), b.superview == nil ? @"(вне окна)" : @""];
-                if (b != nil) [b setHidden:NO];
+                if (b != nil) {
+                    [b setHidden:NO];
+                    [b setAlphaValue:1.0];
+                    [b setEnabled:(kinds[i] != NSWindowZoomButton)];
+                }
+            }
+            // полоса заголовка могла оказаться под содержимым — поднимаем её наверх
+            NSView *frameView = [[w contentView] superview];
+            NSButton *close = [w standardWindowButton:NSWindowCloseButton];
+            NSView *titlebarContainer = close.superview.superview;
+            if (titlebarContainer != nil && titlebarContainer.superview == frameView && [frameView.subviews lastObject] != titlebarContainer) {
+                [frameView addSubview:titlebarContainer positioned:NSWindowAbove relativeTo:nil];
+                [s appendString:@" заголовок поднят"];
             }
             [s appendString:@"; "];
         }

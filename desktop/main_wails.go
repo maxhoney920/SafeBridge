@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/safebridge/desktop/internal/tray"
 	"github.com/wailsapp/wails/v2"
@@ -39,8 +40,15 @@ func main() {
 	}
 	app.ui = uiHooks{
 		openURL: func(u string) { wr.BrowserOpenURL(ctx, u) },
-		show:    func() { wr.Show(ctx); wr.WindowUnminimise(ctx); wr.WindowShow(ctx) },
-		quit:    func() { wr.Quit(ctx) },
+		show: func() {
+			wr.Show(ctx)
+			wr.WindowUnminimise(ctx)
+			wr.WindowShow(ctx)
+			if runtime.GOOS == "darwin" {
+				tray.FixWindowButtons()
+			}
+		},
+		quit: func() { wr.Quit(ctx) },
 	}
 	// macOS: своё меню приложения — «Правка» нужна, чтобы работали ⌘C/⌘V (вставка ссылки
 	// на подписку), а «Выйти» (⌘Q) завершает приложение, даже когда окно только прячется
@@ -65,9 +73,14 @@ func main() {
 		OnStartup:        func(c context.Context) { ctx = c },
 		OnDomReady: func(context.Context) {
 			if runtime.GOOS == "darwin" {
-				if info := tray.FixWindowButtons(); info != "" {
-					log.Println("кнопки окна:", info)
-				}
+				// на macOS 10.13 кнопки окна пропадали; окно к этому моменту может быть ещё
+				// не показано — повторяем через секунду и три
+				go func() {
+					for _, d := range []time.Duration{0, time.Second, 3 * time.Second} {
+						time.Sleep(d)
+						log.Println("кнопки окна:", tray.FixWindowButtons())
+					}
+				}()
 			}
 		},
 		OnShutdown: func(context.Context) { app.shutdown() },
