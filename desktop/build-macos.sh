@@ -45,8 +45,8 @@ fetch_xray() { # $1 — имя архива в релизе XTLS
   local zip="$CACHE/$1" want got
   if [ ! -f "$zip" ]; then
     say "Скачиваю $1 (Xray $XRAY_VERSION)"
-    curl -fL --progress-bar -o "$zip.part" "https://github.com/XTLS/Xray-core/releases/download/v$XRAY_VERSION/$1"
-    curl -fsSL -o "$zip.dgst" "https://github.com/XTLS/Xray-core/releases/download/v$XRAY_VERSION/$1.dgst"
+    curl -fL --retry 5 --retry-delay 5 --retry-all-errors --progress-bar -o "$zip.part" "https://github.com/XTLS/Xray-core/releases/download/v$XRAY_VERSION/$1"
+    curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o "$zip.dgst" "https://github.com/XTLS/Xray-core/releases/download/v$XRAY_VERSION/$1.dgst"
     mv "$zip.part" "$zip"
   fi
   want=$(sed -n 's/^SHA2-256= *\([0-9a-f]\{64\}\).*/\1/p' "$zip.dgst" | head -1)
