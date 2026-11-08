@@ -3,6 +3,7 @@ module github.com/safebridge/desktop
 go 1.24
 
 require (
+	github.com/evanw/esbuild v0.25.12
 	github.com/wailsapp/wails/v2 v2.10.2
 	golang.org/x/sys v0.30.0
 )

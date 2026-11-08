@@ -2,6 +2,26 @@
 // Дополняет старые версии WebKit (macOS High Sierra, Safari 13): в новых ничего не делает.
 (function () {
   if (typeof globalThis === 'undefined') window.globalThis = window;
+
+  // Приложение: если окно не запустилось, показать причину вместо вечного «Запускаю…»
+  var errors = [];
+  window.addEventListener('error', function (e) {
+    errors.push((e.message || 'ошибка') + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason;
+    errors.push('Promise: ' + (r && r.message ? r.message : String(r)));
+  });
+  if (window === window.top) {
+    setTimeout(function () {
+      var boot = document.getElementById('boot');
+      if (!boot) return;
+      boot.style.whiteSpace = 'pre-wrap';
+      boot.style.padding = '24px';
+      boot.textContent = 'SafeBridge не запустился.\n\n' + (errors.length ? errors.slice(0, 5).join('\n') : 'Окно не получило ответа от приложения.') +
+        '\n\n' + navigator.userAgent;
+    }, 15000);
+  }
   if (!globalThis.structuredClone) {
     globalThis.structuredClone = function (v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); };
   }

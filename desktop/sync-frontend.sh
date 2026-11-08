@@ -10,3 +10,5 @@ for f in ui.css popup.css options.css popup.html options.html; do cp "../extensi
 cp -R ../extension/fonts ../extension/icons frontend/
 for f in background.js common.js presets.js popup.js options.js polyfills.js; do cp "../extension/src/$f" frontend/src/; done
 cp -R frontend-app/. frontend/
+# обычные скрипты вместо ES-модулей, синтаксис для старого WebKit (macOS 10.13–11)
+GOFLAGS=-mod=mod GOSUMDB=off go run ./tools/bundle
