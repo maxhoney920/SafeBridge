@@ -1,0 +1,77 @@
+diff --git a/proxy/tun/tun_darwin.go b/proxy/tun/tun_darwin.go
+index ad9f478..62ec71c 100644
+--- a/proxy/tun/tun_darwin.go
++++ b/proxy/tun/tun_darwin.go
+@@ -9,7 +9,9 @@ import (
+ 	"net/netip"
+ 	"os"
+ 	"strconv"
++	"sync"
+ 	"syscall"
++	"time"
+ 	"unsafe"
+ 
+ 	"github.com/xtls/xray-core/common/buf"
+@@ -41,6 +43,11 @@ type DarwinTun struct {
+ 	tunFile *os.File
+ 	options TunOptions
+ 	ownsFd  bool // true for macOS (we created the fd), false for iOS (fd from system)
++
++	// SafeBridge: перенос исправления XTLS/Xray-core#6580 — Wait ждёт данных через kqueue
++	// вместо procyield, который держал одно ядро процессора загруженным на 100 %
++	kq     int
++	kqOnce sync.Once
+ }
+ 
+ var _ Tun = (*DarwinTun)(nil)
+@@ -92,6 +99,11 @@ func (t *DarwinTun) Start() error {
+ }
+ 
+ func (t *DarwinTun) Close() error {
++	t.kqOnce.Do(func() { t.kq = -1 })
++	if t.kq >= 0 {
++		_ = unix.Close(t.kq)
++		t.kq = -1
++	}
+ 	if t.ownsFd {
+ 		return t.tunFile.Close()
+ 	}
+@@ -170,7 +182,37 @@ func (t *DarwinTun) ReadPacket() (byte, *stack.PacketBuffer, error) {
+ 
+ // Wait some cpu cycles
+ func (t *DarwinTun) Wait() {
+-	procyield(1)
++	t.kqOnce.Do(t.initKqueue)
++	if t.kq >= 0 {
++		events := make([]unix.Kevent_t, 1)
++		ts := unix.NsecToTimespec(int64(100 * time.Millisecond))
++		if _, err := unix.Kevent(t.kq, nil, events, &ts); err == nil || errors.Is(err, unix.EINTR) {
++			return
++		}
++	}
++	time.Sleep(time.Millisecond)
++}
++
++func (t *DarwinTun) initKqueue() {
++	t.kq = -1
++	rc, err := t.tunFile.SyscallConn()
++	if err != nil {
++		return
++	}
++	fd := -1
++	_ = rc.Control(func(f uintptr) { fd = int(f) })
++	if fd < 0 {
++		return
++	}
++	kq, err := unix.Kqueue()
++	if err != nil {
++		return
++	}
++	if _, err = unix.Kevent(kq, []unix.Kevent_t{{Ident: uint64(fd), Filter: unix.EVFILT_READ, Flags: unix.EV_ADD | unix.EV_ENABLE}}, nil, nil); err != nil {
++		_ = unix.Close(kq)
++		return
++	}
++	t.kq = kq
+ }
+ 
+ func (t *DarwinTun) newEndpoint() (stack.LinkEndpoint, error) {

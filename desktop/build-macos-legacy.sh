@@ -62,6 +62,16 @@ if [ ! -d "$XSRC/.git" ]; then
   git clone -q --depth 1 --branch "$XRAY_TAG" https://github.com/XTLS/Xray-core.git "$XSRC"
 fi
 
+# Xray 26.2.6 в режиме TUN на macOS держал одно ядро процессора загруженным на 100 %
+# (ожидание пакетов через procyield). Переносим исправление из новых версий (kqueue).
+XPATCH="$PWD/legacy/xray-26.2.6-darwin-tun-cpu.patch"
+if git -C "$XSRC" apply --check "$XPATCH" 2>/dev/null; then
+  say "Исправляю нагрузку на процессор в TUN (Xray $XRAY_TAG)"
+  git -C "$XSRC" apply "$XPATCH" || die "Правка Xray не применилась"
+elif ! git -C "$XSRC" apply --check -R "$XPATCH" 2>/dev/null; then
+  die "Правка Xray не подходит к исходникам в $XSRC — удалите эту папку и запустите скрипт снова"
+fi
+
 # ---------- 3. сборка под каждую архитектуру ----------
 bins=()
 for arch in $ARCHS; do
