@@ -189,3 +189,6 @@ func bindOutbound(ob map[string]any, iface string) {
 	}
 	so["interface"] = iface
 }
+
+// MacLegacy — сборка для старых macOS (10.13–11).
+func MacLegacy() bool { return isMacLegacy() }

@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/safebridge/desktop/internal/host"
 	"github.com/safebridge/desktop/internal/tray"
 )
 
@@ -33,6 +34,9 @@ func (a *App) Caps() map[string]bool {
 		"service": a.svcc != nil,              // ядро в службе с правами администратора
 		"tunOnly": a.tunOnly,                  // только режим «Весь трафик», без системного прокси
 		"tray":    tray.Available || fakeTray, // значок в строке меню (macOS)
+		// старые macOS: системные кнопки окна работают, но не рисуются — окно продлено под
+		// прозрачную полосу заголовка, кружки рисует интерфейс
+		"customTitlebar": runtime.GOOS == "darwin" && host.MacLegacy() || os.Getenv("SAFEBRIDGE_FAKE_TITLEBAR") != "",
 	}
 }
 

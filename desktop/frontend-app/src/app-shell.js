@@ -4,6 +4,18 @@ import { ext } from './compat.js';
 
 const frame = document.getElementById('ui');
 
+// старые macOS: окно продлено под прозрачную полосу заголовка; системные кнопки там
+// работают, но не рисуются — рисуем кружки ровно под ними и полосу для перетаскивания
+if (ext.caps.customTitlebar) {
+  const bar = document.createElement('div');
+  bar.id = 'titlebar';
+  bar.innerHTML = '<i class="c"></i><i class="m"></i><i class="z"></i>';
+  document.body.prepend(bar);
+  document.documentElement.classList.add('titlebar');
+  globalThis.addEventListener('blur', () => bar.classList.add('inactive'));
+  globalThis.addEventListener('focus', () => bar.classList.remove('inactive'));
+}
+
 globalThis.__sbNavigate = (path) => {
   frame.src = path;
   ext.bridge.call('ShowWindow').catch(() => {});

@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/safebridge/desktop/internal/host"
 	"github.com/safebridge/desktop/internal/tray"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
@@ -103,6 +104,7 @@ func main() {
 		},
 		Windows: &windows.Options{Theme: windows.SystemDefault, WebviewBrowserPath: fixedWebView2()},
 		Mac: &mac.Options{
+			TitleBar:   macTitleBar(),
 			Appearance: mac.DefaultAppearance, // светлая или тёмная — как в системе
 			About:      &mac.AboutInfo{Title: "SafeBridge " + version, Message: "VPN для компьютера.\nСделано с любовью safe-internet ♥"},
 		},
@@ -125,4 +127,13 @@ func fixedWebView2() string {
 		return dir
 	}
 	return ""
+}
+
+// macTitleBar — на старых macOS полоса заголовка прозрачная, а окно продлено под неё:
+// системные кнопки там работают, но не рисуются, кружки под ними рисует интерфейс.
+func macTitleBar() *mac.TitleBar {
+	if !host.MacLegacy() {
+		return nil
+	}
+	return &mac.TitleBar{TitlebarAppearsTransparent: true, FullSizeContent: true, HideTitle: true}
 }
