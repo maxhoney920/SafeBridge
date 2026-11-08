@@ -55,3 +55,6 @@ func dataDir() string {
 		return filepath.Join(homeDir(), ".local", "share", "safebridge")
 	}
 }
+
+// Win7Build — сборка для Windows 7 (пропатченный Go, ядро Xray-win7).
+func Win7Build() bool { return isWin7Build() }

@@ -168,7 +168,7 @@ chmod +x safebridge-linux-amd64
 | Система | Файл |
 |---|---|
 | Windows 10 и 11 | [SafeBridge-windows-x64.exe](https://github.com/maxhoney920/SafeBridge/raw/downloads/SafeBridge-windows-x64.exe) · для ARM — [SafeBridge-windows-arm64.exe](https://github.com/maxhoney920/SafeBridge/raw/downloads/SafeBridge-windows-arm64.exe) |
-| Windows 7 и 8 | [64 бита](https://github.com/maxhoney920/SafeBridge/raw/downloads/SafeBridge-windows7-x64.exe) · [32 бита](https://github.com/maxhoney920/SafeBridge/raw/downloads/SafeBridge-windows7-x86.exe) — нужна среда WebView2: приложение предложит её скачать |
+| Windows 7 и 8 | архив `SafeBridge-…-windows7-x64.zip` (64 бита) или `-x86.zip` (32 бита) на [странице релиза](https://github.com/maxhoney920/SafeBridge/releases/latest), в нём уже есть WebView2 109: распакуйте и запускайте SafeBridge.exe из папки. Если WebView2 уже установлен, хватит одного файла: [64 бита](https://github.com/maxhoney920/SafeBridge/raw/downloads/SafeBridge-windows7-x64.exe) · [32 бита](https://github.com/maxhoney920/SafeBridge/raw/downloads/SafeBridge-windows7-x86.exe) |
 | macOS 12 и новее | [SafeBridge-macos.zip](https://github.com/maxhoney920/SafeBridge/raw/downloads/SafeBridge-macos.zip) — Apple Silicon и Intel |
 | macOS 10.13–11 | [SafeBridge-macos-legacy.zip](https://github.com/maxhoney920/SafeBridge/raw/downloads/SafeBridge-macos-legacy.zip) — High Sierra, Mojave, Catalina, Big Sur |
 

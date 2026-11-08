@@ -1,20 +1,21 @@
 SafeBridge для Windows 7
 ========================
 
-Нужна Windows 7 SP1. Файлы:
-  SafeBridge-1.0.0-windows7-x64.exe — для 64-битной Windows 7
-  SafeBridge-1.0.0-windows7-x86.exe — для 32-битной
+Нужна Windows 7 SP1. Архивы:
+  SafeBridge-1.0.0-windows7-x64.zip — для 64-битной Windows 7
+  SafeBridge-1.0.0-windows7-x86.zip — для 32-битной
 («Пуск» → правой кнопкой «Компьютер» → «Свойства» → «Тип системы».)
 
-Окно SafeBridge работает на Microsoft Edge WebView2. На Windows 7 его последняя
-версия — 109, и Microsoft её больше не обновляет. Если WebView2 нет, при первом
-запуске SafeBridge предложит его скачать: согласитесь, нужен интернет. Можно
-поставить и заранее — установщик Microsoft сам выберет версию для Windows 7:
-  https://go.microsoft.com/fwlink/p/?LinkId=2124703
+Окно SafeBridge работает на Microsoft Edge WebView2. Его последняя версия для
+Windows 7 — 109, а установщик от Microsoft на Windows 7 больше не работает. Поэтому
+в архиве SafeBridge лежит вместе с WebView2.
+Распакуйте архив в любую папку (например, C:\SafeBridge) и запускайте SafeBridge.exe
+оттуда. Папка WebView2 должна лежать рядом с SafeBridge.exe — не удаляйте её.
+Запуск прямо из архива, не распаковывая, не сработает.
 
-Без интернета: положите распакованную фиксированную версию WebView2 109
-(папку с msedgewebview2.exe) рядом с программой и назовите её WebView2 —
-SafeBridge возьмёт её сам.
+Если WebView2 уже установлен в системе, хватит одного файла
+SafeBridge-1.0.0-windows7-x64.exe (или -x86.exe). Обновления SafeBridge ставит сам,
+папку WebView2 они не трогают.
 
 Режимы — как в обычной версии: «Системный прокси» без прав администратора и
 «Весь трафик» (TUN) с правами администратора. Ядро — Xray для Windows 7, при

@@ -31,6 +31,9 @@ func main() {
 	if handleCLI() || runDaemonIfRequested() {
 		return
 	}
+	if !webView2Ready() {
+		return
+	}
 	assets, _ := fs.Sub(embedded, "frontend")
 	app := NewApp()
 	var ctx context.Context
