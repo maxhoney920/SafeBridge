@@ -57,10 +57,17 @@ func main() {
 		appMenu = menu.NewMenu()
 		m := appMenu.AddSubmenu("SafeBridge")
 		m.AddText("Скрыть SafeBridge", keys.CmdOrCtrl("h"), func(*menu.CallbackData) { wr.Hide(ctx) })
+		m.AddText("Свернуть", keys.CmdOrCtrl("m"), func(*menu.CallbackData) { wr.WindowMinimise(ctx) })
+		m.AddText("Закрыть окно", keys.CmdOrCtrl("w"), func(*menu.CallbackData) {
+			if trayWanted() {
+				wr.Hide(ctx) // значок в строке меню остаётся, VPN работает
+			} else {
+				wr.WindowMinimise(ctx)
+			}
+		})
 		m.AddSeparator()
 		m.AddText("Выйти из SafeBridge", keys.CmdOrCtrl("q"), func(*menu.CallbackData) { app.Quit() })
 		appMenu.Append(menu.EditMenu())
-		appMenu.Append(menu.WindowMenu())
 	}
 	err := wails.Run(&options.App{
 		Title:            "SafeBridge",

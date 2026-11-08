@@ -21,6 +21,7 @@ extern void sbTrayClick(char *ident);
 
 static NSStatusItem *sbItem = nil;
 static SBTrayTarget *sbTarget = nil;
+static BOOL sbTitlebarRebuilt = NO;
 
 static NSMenu *sbBuildMenu(NSArray *items) {
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
@@ -105,6 +106,26 @@ const char *sbFixWindowButtons(void) {
                     [b setEnabled:(kinds[i] != NSWindowZoomButton)];
                 }
             }
+            // один раз пересобираем полосу заголовка: на macOS 10.13 кнопки бывали
+            // «видимыми», но не отрисованными
+            if (!sbTitlebarRebuilt) {
+                sbTitlebarRebuilt = YES;
+                NSWindowStyleMask m = w.styleMask;
+                w.styleMask = m & ~NSWindowStyleMaskTitled;
+                w.styleMask = m;
+                [s appendString:@" заголовок пересобран"];
+            }
+            for (int i = 0; i < 3; i++) {
+                NSButton *b = [w standardWindowButton:kinds[i]];
+                if (b == nil) continue;
+                NSRect r = [b convertRect:b.bounds toView:nil];
+                float alpha = 1.0;
+                for (NSView *v = b; v != nil; v = v.superview) alpha *= v.alphaValue;
+                [s appendFormat:@" к%d:(%.0f,%.0f %.0fx%.0f) скрыта-вверху=%d alpha=%.2f слой=%d", i, r.origin.x, r.origin.y, r.size.width, r.size.height,
+                    b.isHiddenOrHasHiddenAncestor, alpha, b.layer != nil];
+                [b setNeedsDisplay:YES];
+            }
+            [s appendFormat:@" окно %.0fx%.0f", w.frame.size.width, w.frame.size.height];
             // полоса заголовка могла оказаться под содержимым — поднимаем её наверх
             NSView *frameView = [[w contentView] superview];
             NSButton *close = [w standardWindowButton:NSWindowCloseButton];
@@ -113,6 +134,8 @@ const char *sbFixWindowButtons(void) {
                 [frameView addSubview:titlebarContainer positioned:NSWindowAbove relativeTo:nil];
                 [s appendString:@" заголовок поднят"];
             }
+            [[w contentView].superview setNeedsDisplay:YES];
+            [w displayIfNeeded];
             [s appendString:@"; "];
         }
         info = s;
