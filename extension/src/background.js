@@ -693,10 +693,11 @@ async function connInfo(st) {
           await sessionStore.set({ conn: { ...cur, ip: r.ip, country: r.country || '', city: r.city || '' } });
           notify();
         }
-      } catch {
-        // старый помощник без команды ip или сайт не ответил — покажем только время
+      } catch (e) {
+        // старый помощник без команды ip или сайт не ответил
+        console.warn('ip', e);
         const { conn: cur } = await sessionStore.get(['conn']);
-        if (cur && cur.server === server && !cur.ipError) { await sessionStore.set({ conn: { ...cur, ipError: true } }); notify(); }
+        if (cur && cur.server === server) { await sessionStore.set({ conn: { ...cur, ipError: String(e?.message || e).slice(0, 200) } }); notify(); }
       } finally {
         connFetch = null;
       }

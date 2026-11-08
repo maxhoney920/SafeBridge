@@ -300,10 +300,36 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 	// P2P (BitTorrent, uTP) — всегда напрямую, мимо VPN-сервера: сервисы запрещают торренты
 	// через свои серверы. Правило первое и не настраивается.
 	rules := []any{map[string]any{"protocol": []string{"bittorrent"}, "outboundTag": "direct"}}
+	if l.tun != nil {
+		// Все DNS-запросы, попавшие в адаптер (к любому серверу, даже в локальной сети),
+		// ядро отвечает само, спрашивая публичные DNS через VPN, — в любом режиме списков.
+		// Провайдер не видит, какие сайты открываются.
+		rules = append(rules,
+			map[string]any{"inboundTag": []string{"tun"}, "port": "53", "outboundTag": "dns-out"},
+			// адреса самих VPN-серверов — напрямую через отдельный DNS (иначе замкнутый круг)
+			map[string]any{"inboundTag": []string{"dns-internal"}, "ip": []string{serverDNS}, "outboundTag": "direct"},
+			map[string]any{"inboundTag": []string{"dns-internal"}, "outboundTag": l.selected})
+	}
+	hosts := serverHosts(servers)
 	var outbounds []any
 	for _, s := range servers {
 		ob := sanitizeOutbound(s.Outbound)
 		ob["tag"] = s.ID
+		if l.tun != nil && len(hosts) > 0 {
+			// имя сервера ядро узнаёт своим DNS, а не системным: системный DNS в режиме
+			// «весь трафик» сам идёт через VPN, которому нужен адрес сервера
+			ss, _ := ob["streamSettings"].(map[string]any)
+			if ss == nil {
+				ss = map[string]any{}
+				ob["streamSettings"] = ss
+			}
+			so, _ := ss["sockopt"].(map[string]any)
+			if so == nil {
+				so = map[string]any{}
+				ss["sockopt"] = so
+			}
+			so["domainStrategy"] = dnsQueryStrategy()
+		}
 		outbounds = append(outbounds, ob)
 		if tp := l.testPort[s.ID]; tp > 0 {
 			in := "t-" + s.ID
@@ -312,11 +338,19 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 			rules = append(rules, map[string]any{"inboundTag": []string{in}, "outboundTag": s.ID})
 		}
 	}
-	outbounds = append(outbounds, map[string]any{"tag": "direct", "protocol": "freedom"},
-		map[string]any{"tag": "block", "protocol": "blackhole"})
+	direct := map[string]any{"tag": "direct", "protocol": "freedom"}
+	if l.tun != nil {
+		// сайты «напрямую» с подставленным доменом: адрес — тоже через DNS ядра (через VPN)
+		direct["settings"] = map[string]any{"domainStrategy": "UseIP"}
+	}
+	outbounds = append(outbounds, direct, map[string]any{"tag": "block", "protocol": "blackhole"})
+	if l.tun != nil {
+		// A и AAAA ядро отвечает само, остальные типы запросов уходят по адресу как есть
+		outbounds = append(outbounds, map[string]any{"tag": "dns-out", "protocol": "dns", "settings": map[string]any{"nonIPQuery": "skip"}})
+	}
 	if l.iface != "" {
 		for _, ob := range outbounds {
-			if m := ob.(map[string]any); m["tag"] == "direct" {
+			if m := ob.(map[string]any); m["tag"] == "direct" || m["tag"] == "dns-out" {
 				bindOutbound(m, l.iface)
 			}
 		}
@@ -327,8 +361,6 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 		map[string]any{"inboundTag": mainTags, "outboundTag": l.selected},
 	)
 	if t := l.tun; t != nil {
-		// DNS-запросы к адаптеру — через VPN, иначе провайдер видит, какие сайты открываются
-		rules = append(rules, map[string]any{"inboundTag": []string{"tun"}, "port": "53", "outboundTag": l.selected})
 		switch t.Mode {
 		case "include":
 			if d := xrayDomains(t.Include); len(d) > 0 {
@@ -363,6 +395,18 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 			"rules":          rules,
 		},
 	}
+	if l.tun != nil {
+		dnsServers := []any{}
+		if len(hosts) > 0 {
+			var full []string
+			for _, h := range hosts {
+				full = append(full, "full:"+h)
+			}
+			dnsServers = append(dnsServers, map[string]any{"address": serverDNS, "domains": full, "skipFallback": true})
+		}
+		dnsServers = append(dnsServers, "1.1.1.1", "8.8.8.8")
+		cfg["dns"] = map[string]any{"tag": "dns-internal", "servers": dnsServers, "queryStrategy": dnsQueryStrategy()}
+	}
 	return json.MarshalIndent(cfg, "", "  ")
 }
 
@@ -376,6 +420,41 @@ func xrayDomains(list []string) []string {
 			continue
 		}
 		out = append(out, "domain:"+d)
+	}
+	return out
+}
+
+// serverDNS — DNS, через который ядро напрямую узнаёт адреса VPN-серверов.
+const serverDNS = "8.8.4.4"
+
+// serverHosts — имена VPN-серверов (не IP), к которым подключаются выходы.
+func serverHosts(servers []ApplyServer) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(a any) {
+		h, ok := a.(string)
+		h = strings.ToLower(strings.TrimSpace(h))
+		if !ok || h == "" || net.ParseIP(strings.Trim(h, "[]")) != nil || seen[h] || strings.ContainsAny(h, " /:") {
+			return
+		}
+		seen[h] = true
+		out = append(out, h)
+	}
+	for _, sv := range servers {
+		st, _ := sv.Outbound["settings"].(map[string]any)
+		if st == nil {
+			continue
+		}
+		for _, key := range []string{"vnext", "servers", "peers"} {
+			if list, ok := st[key].([]any); ok {
+				for _, it := range list {
+					if m, ok := it.(map[string]any); ok {
+						add(m["address"])
+					}
+				}
+			}
+		}
+		add(st["address"])
 	}
 	return out
 }
@@ -623,6 +702,9 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 		}
 		c.mu.Unlock()
 		os.Remove(filepath.Join(dir, "core.pid"))
+		if !intentional && l.tun != nil {
+			tunDNSDown() // ядро упало: DNS, направленные в адаптер, без него не работают
+		}
 		if !intentional && c.onExit != nil {
 			msg := "ядро Xray завершилось"
 			if err != nil {
@@ -658,6 +740,9 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 			return c.Status(), err
 		}
 	}
+	if l.tun != nil {
+		tunDNSUp()
+	}
 	return c.Status(), nil
 }
 
@@ -675,6 +760,9 @@ func (c *Core) Stop() {
 	}
 	if legacyTun {
 		defer legacyRoutesDown(tunName(), layout)
+	}
+	if layout.tun != nil {
+		defer tunDNSDown()
 	}
 	terminate(cmd)
 	select {

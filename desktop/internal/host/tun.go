@@ -161,3 +161,12 @@ func deepCopy(v any) any {
 		return v
 	}
 }
+
+// Без IPv6 у компьютера (и на macOS, где TUN только IPv4) ядро не спрашивает AAAA:
+// иначе программы получают IPv6-адреса, до которых не дойти.
+func dnsQueryStrategy() string {
+	if tunIPv6() {
+		return "UseIP"
+	}
+	return "UseIPv4"
+}

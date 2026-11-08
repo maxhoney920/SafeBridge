@@ -182,9 +182,10 @@ function bridgeCard(servers) {
 function connLine() {
   const c = state.conn;
   if (!c) return null;
-  const where = c.ip ? `IP ${c.ip}${c.country ? ' · ' + countryName(c.country) : ''}` : c.ipError ? '' : 'IP определяется…';
+  const where = c.ip ? `IP ${c.ip}${c.country ? ' · ' + countryName(c.country) : ''}`
+    : c.ipError ? (/неизвестная команда/.test(c.ipError) ? 'IP — после обновления помощника' : 'IP не определён') : 'IP определяется…';
   return el('span', { class: 'conn' },
-    where && el('span', { class: 'conn-ip', text: where }),
+    el('span', { class: 'conn-ip', text: where, title: !c.ip && c.ipError ? c.ipError : null }),
     el('span', { class: 'conn-time', 'data-since': String(c.since), title: 'Время подключения', text: fmtElapsed(Date.now() - c.since) }));
 }
 
