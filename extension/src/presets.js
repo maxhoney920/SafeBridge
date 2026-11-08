@@ -7,7 +7,7 @@
 // набор узнаётся на странице и в списке пользователя; по умолчанию первые два адреса);
 // service — набор одного сервиса (только такие предлагаются в «Без VPN» со страницы).
 export const LISTS = {
-  rev: 2,
+  rev: 3,
   updated: '2026-11-08',
   vpn: [
     { name: 'YouTube', domains: ['youtube.com', 'youtu.be', 'googlevideo.com', 'ytimg.com', 'ggpht.com', 'youtube-nocookie.com', 'youtubei.googleapis.com', 'youtube.googleapis.com', 'jnn-pa.googleapis.com', 'youtubekids.com', 'yt.be'] },
@@ -15,7 +15,15 @@ export const LISTS = {
     { name: 'Facebook', domains: ['facebook.com', 'fb.com', 'fbcdn.net', 'messenger.com', 'facebook.net', 'fbsbx.com'] },
     { name: 'X (Twitter)', domains: ['x.com', 'twitter.com', 'twimg.com', 't.co'] },
     { name: 'Discord', domains: ['discord.com', 'discord.gg', 'discordapp.com', 'discordapp.net', 'discord.media', 'discordcdn.com'] },
-    { name: 'ChatGPT', domains: ['chatgpt.com', 'openai.com', 'oaistatic.com', 'oaiusercontent.com', 'sora.com'] },
+    // ChatGPT и Codex (облако, приложение, CLI и расширение для редакторов): Codex ходит на
+    // chatgpt.com/backend-api/codex, auth.openai.com и api.openai.com. Список сверен с
+    // v2fly/domain-list-community (openai); livekit — голосовой режим.
+    { name: 'ChatGPT и Codex', main: ['chatgpt.com', 'openai.com'],
+      domains: ['chatgpt.com', 'openai.com', 'oaistatic.com', 'oaiusercontent.com', 'sora.com',
+        'chat.com', 'chatgpt.site', 'openai.org', 'oaistatsig.com',
+        'openaiapi-site.azureedge.net', 'openaicom.imgix.net', 'openaiassets.blob.core.windows.net',
+        'openaicomproductionae4b.blob.core.windows.net', 'production-openaicom-storage.azureedge.net',
+        'chatgpt.livekit.cloud', 'host.livekit.cloud', 'turn.livekit.cloud'] },
     { name: 'Claude', domains: ['claude.ai', 'anthropic.com', 'claudeusercontent.com', 'claude.com'] },
     // Gemini, AI Studio, NotebookLM и другие сервисы Google AI. Страница открывается с gemini.google.com,
     // а сами ответы идут через служебные адреса *-pa.googleapis.com и *.clients6.google.com:
