@@ -3,6 +3,23 @@
 // (boot.js) — так модулям не нужен await на верхнем уровне, которого нет в старых
 // WebKit (macOS High Sierra).
 
+// macOS с Safari старше 13.1: встроенный скрипт Wails (связь окна с программой) написан
+// с «?.» и не запускается — window.go не появляется. Тогда берём из него описание методов
+// (window.wailsbindings) и подключаем его же копию с переведённым синтаксисом
+// (src/wails-runtime.js, готовит tools/bundle при сборке).
+async function ensureWailsRuntime() {
+  const wailsPage = location.protocol === 'wails:' || location.hostname === 'wails.localhost';
+  if (!wailsPage || (globalThis.go && globalThis.go.main && globalThis.go.main.App)) return;
+  const text = await fetch('/wails/runtime.js').then((r) => r.text());
+  const m = text.match(/^window\.wailsbindings='(?:[^'\\]|\\.)*';/);
+  if (m) (0, eval)(m[0]);
+  const copy = await fetch('src/wails-runtime.js').then((r) => r.text());
+  (0, eval)(copy);
+  if (!(globalThis.go && globalThis.go.main && globalThis.go.main.App)) {
+    throw new Error('связь окна с программой не запустилась (встроенный скрипт Wails), Safari: ' + navigator.userAgent);
+  }
+}
+
 function createBridge() {
   const wails = globalThis.go?.main?.App;
   if (wails) {
@@ -43,6 +60,7 @@ function listenerSet() {
 }
 
 export async function createExt() {
+  await ensureWailsRuntime();
   const bridge = createBridge();
   const origin = location.origin;
   const appVersion = await bridge.call('Version');

@@ -22,6 +22,25 @@
         '\n\n' + navigator.userAgent;
     }, 15000);
   }
+  // Safari 11–13 (macOS High Sierra): чего нет — дополняем
+  if (!Object.fromEntries) {
+    Object.fromEntries = function (it) { var o = {}; Array.from(it).forEach(function (kv) { o[kv[0]] = kv[1]; }); return o; };
+  }
+  if (!Array.prototype.flat) {
+    Object.defineProperty(Array.prototype, 'flat', { configurable: true, writable: true, value: function (depth) {
+      var d = depth === undefined ? 1 : Number(depth) || 0;
+      return d < 1 ? this.slice() : this.reduce(function (a, v) { return a.concat(Array.isArray(v) ? v.flat(d - 1) : v); }, []);
+    } });
+  }
+  if (!globalThis.queueMicrotask) {
+    globalThis.queueMicrotask = function (fn) { Promise.resolve().then(fn); };
+  }
+  if (!Element.prototype.replaceChildren) {
+    Element.prototype.replaceChildren = function () {
+      while (this.firstChild) this.removeChild(this.firstChild);
+      this.append.apply(this, arguments);
+    };
+  }
   if (!globalThis.structuredClone) {
     globalThis.structuredClone = function (v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); };
   }
