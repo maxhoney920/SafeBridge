@@ -108,7 +108,8 @@ const char *sbFixWindowButtons(void) {
             }
             // один раз пересобираем полосу заголовка: на macOS 10.13 кнопки бывали
             // «видимыми», но не отрисованными
-            if (!sbTitlebarRebuilt) {
+            // с прозрачной полосой (FullSizeContentView) пересборку не делаем: она сбивает WKWebView
+            if (!sbTitlebarRebuilt && !(w.styleMask & NSWindowStyleMaskFullSizeContentView)) {
                 sbTitlebarRebuilt = YES;
                 NSWindowStyleMask m = w.styleMask;
                 w.styleMask = m & ~NSWindowStyleMaskTitled;
@@ -126,11 +127,14 @@ const char *sbFixWindowButtons(void) {
                 [b setNeedsDisplay:YES];
             }
             [s appendFormat:@" окно %.0fx%.0f", w.frame.size.width, w.frame.size.height];
+            for (NSView *v in [w contentView].subviews) {
+                [s appendFormat:@" вид %@:(%.0f,%.0f %.0fx%.0f) скрыт=%d", NSStringFromClass([v class]), v.frame.origin.x, v.frame.origin.y, v.frame.size.width, v.frame.size.height, v.isHidden];
+            }
             // полоса заголовка могла оказаться под содержимым — поднимаем её наверх
             NSView *frameView = [[w contentView] superview];
             NSButton *close = [w standardWindowButton:NSWindowCloseButton];
             NSView *titlebarContainer = close.superview.superview;
-            if (titlebarContainer != nil && titlebarContainer.superview == frameView && [frameView.subviews lastObject] != titlebarContainer) {
+            if (!(w.styleMask & NSWindowStyleMaskFullSizeContentView) && titlebarContainer != nil && titlebarContainer.superview == frameView && [frameView.subviews lastObject] != titlebarContainer) {
                 [frameView addSubview:titlebarContainer positioned:NSWindowAbove relativeTo:nil];
                 [s appendString:@" заголовок поднят"];
             }
