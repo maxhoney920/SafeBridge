@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -232,6 +233,11 @@ type TunOptions struct {
 	Mode    string   `json:"mode"`
 	Include []string `json:"include"`
 	Exclude []string `json:"exclude"`
+	// KillSwitch — если ядро с VPN-сервером не работает (упало, не запустилось), TUN
+	// остаётся, а то, что должно идти через VPN, блокируется: сайты не откроются мимо VPN
+	KillSwitch bool `json:"killSwitch,omitempty"`
+
+	block bool // ядро-«заглушка» без серверов: вместо VPN — блокировка
 }
 
 func validServers(servers []ApplyServer) []ApplyServer {
@@ -252,16 +258,21 @@ var p2pSniffing = map[string]any{"enabled": true, "destOverride": []string{"http
 
 func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 	servers = validServers(servers)
-	if len(servers) == 0 {
+	block := l.tun != nil && l.tun.block
+	if len(servers) == 0 && !block {
 		return nil, errors.New("нет поддерживаемых серверов")
 	}
 	l.tags = nil
 	for _, s := range servers {
 		l.tags = append(l.tags, s.ID)
 	}
-	if !contains(l.tags, l.selected) {
+	if block {
+		l.selected = "block" // всё, что шло бы через VPN, — в blackhole
+	} else if !contains(l.tags, l.selected) {
 		l.selected = l.tags[0]
 	}
+	// DNS через VPN — только когда VPN есть; в заглушке DNS идёт как обычно
+	dnsViaVPN := l.tun != nil && !block
 	inbounds := []any{
 		map[string]any{"tag": "main", "listen": "127.0.0.1", "port": l.port, "protocol": "socks",
 			"settings": map[string]any{"auth": "noauth", "udp": true}, "sniffing": p2pSniffing},
@@ -300,7 +311,7 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 	// P2P (BitTorrent, uTP) — всегда напрямую, мимо VPN-сервера: сервисы запрещают торренты
 	// через свои серверы. Правило первое и не настраивается.
 	rules := []any{map[string]any{"protocol": []string{"bittorrent"}, "outboundTag": "direct"}}
-	if l.tun != nil {
+	if dnsViaVPN {
 		// Все DNS-запросы, попавшие в адаптер (к любому серверу, даже в локальной сети),
 		// ядро отвечает само, спрашивая публичные DNS через VPN, — в любом режиме списков.
 		// Провайдер не видит, какие сайты открываются.
@@ -339,12 +350,12 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 		}
 	}
 	direct := map[string]any{"tag": "direct", "protocol": "freedom"}
-	if l.tun != nil {
+	if dnsViaVPN {
 		// сайты «напрямую» с подставленным доменом: адрес — тоже через DNS ядра (через VPN)
 		direct["settings"] = map[string]any{"domainStrategy": "UseIP"}
 	}
 	outbounds = append(outbounds, direct, map[string]any{"tag": "block", "protocol": "blackhole"})
-	if l.tun != nil {
+	if dnsViaVPN {
 		// A и AAAA ядро отвечает само, остальные типы запросов уходят по адресу как есть
 		outbounds = append(outbounds, map[string]any{"tag": "dns-out", "protocol": "dns", "settings": map[string]any{"nonIPQuery": "skip"}})
 	}
@@ -395,7 +406,7 @@ func buildConfig(servers []ApplyServer, l *coreLayout) ([]byte, error) {
 			"rules":          rules,
 		},
 	}
-	if l.tun != nil {
+	if dnsViaVPN {
 		dnsServers := []any{}
 		if len(hosts) > 0 {
 			var full []string
@@ -494,6 +505,9 @@ type Core struct {
 	layout   coreLayout
 	hash     string
 	stopping bool
+	guard    bool       // работает заглушка: VPN нет, сайты «через VPN» блокируются
+	gen      int        // номер запуска: заглушка после падения не ставится, если ядро уже перезапустили или выключили
+	opMu     sync.Mutex // запуск и остановка ядра — по одному
 	last     *applyArgs // последний набор серверов — для перезапуска после обновления ядра
 	logs     *ring
 	onExit   func(msg string)
@@ -505,6 +519,7 @@ type CoreStatus struct {
 	HTTPPort int    `json:"httpPort,omitempty"`
 	TUN      bool   `json:"tun,omitempty"`
 	Selected string `json:"selected,omitempty"`
+	Blocked  bool   `json:"blocked,omitempty"` // VPN нет, сайты «через VPN» блокируются (TUN)
 }
 
 func NewCore(onExit func(string)) *Core {
@@ -514,6 +529,9 @@ func NewCore(onExit func(string)) *Core {
 func (c *Core) Status() CoreStatus {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.guard && c.cmd != nil {
+		return CoreStatus{Blocked: true}
+	}
 	return CoreStatus{Running: c.cmd != nil, Port: c.layout.port, HTTPPort: c.layout.httpPort, TUN: c.cmd != nil && c.layout.tun != nil, Selected: c.layout.selected}
 }
 
@@ -581,7 +599,9 @@ func (c *Core) Restart() (CoreStatus, error) {
 	return c.apply(last.servers, sel, last.preferredPort, last.tun, true)
 }
 
-func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, tun *TunOptions, force bool) (CoreStatus, error) {
+func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, tun *TunOptions, force bool) (st CoreStatus, err error) {
+	c.opMu.Lock()
+	defer c.opMu.Unlock()
 	hashBytes, _ := json.Marshal([]any{servers, tun})
 	h := sha256.Sum256(hashBytes)
 	hash := hex.EncodeToString(h[:])
@@ -592,7 +612,10 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 	sameSel := c.layout.selected == selected || !contains(c.layout.tags, selected)
 	prevPort := c.layout.port
 	c.mu.Unlock()
-	if same && sameSel {
+	c.mu.Lock()
+	guarding := c.guard && c.cmd != nil
+	c.mu.Unlock()
+	if same && sameSel && !guarding {
 		return c.Status(), nil
 	}
 	if len(servers) == 0 {
@@ -602,7 +625,15 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 	if err != nil {
 		return c.Status(), err
 	}
-	c.Stop()
+	c.stopCore()
+	defer func() {
+		// ядро с серверами не запустилось — в режиме TUN ставим заглушку, чтобы сайты
+		// «через VPN» не открылись напрямую
+		if err != nil && tun != nil && tun.KillSwitch {
+			c.startGuard(tun)
+			st = c.Status()
+		}
+	}()
 
 	port := 0
 	switch {
@@ -646,6 +677,12 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 	if err != nil {
 		return c.Status(), err
 	}
+	return c.launch(corePath, l, cfg, hash)
+}
+
+// launch запускает ядро с готовым конфигом и ждёт, пока оно начнёт принимать соединения.
+func (c *Core) launch(corePath string, l coreLayout, cfg []byte, hash string) (CoreStatus, error) {
+	block := l.tun != nil && l.tun.block
 	dir := dataDir()
 	os.MkdirAll(dir, 0o700)
 	cfgPath := filepath.Join(dir, "config.json")
@@ -687,7 +724,9 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 
 	done := make(chan struct{})
 	c.mu.Lock()
-	c.cmd, c.done, c.layout, c.hash, c.stopping = cmd, done, l, hash, false
+	c.gen++
+	gen := c.gen
+	c.cmd, c.done, c.layout, c.hash, c.stopping, c.guard = cmd, done, l, hash, false, block
 	c.mu.Unlock()
 
 	go func() {
@@ -704,6 +743,9 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 		os.Remove(filepath.Join(dir, "core.pid"))
 		if !intentional && l.tun != nil {
 			tunDNSDown() // ядро упало: DNS, направленные в адаптер, без него не работают
+			if l.tun.KillSwitch && !block {
+				go c.guardAfterCrash(gen, l.tun) // сайты «через VPN» не должны открыться напрямую
+			}
 		}
 		if !intentional && c.onExit != nil {
 			msg := "ядро Xray завершилось"
@@ -729,24 +771,87 @@ func (c *Core) apply(servers []ApplyServer, selected string, preferredPort int, 
 			break
 		}
 		if time.Now().After(deadline) {
-			c.Stop()
+			c.stopCore()
 			return c.Status(), errors.New("Xray не ответил за 10 секунд")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	if l.tun != nil && isMacLegacy() {
 		if err := legacyRoutesUp(tunName(), l); err != nil {
-			c.Stop()
+			c.stopCore()
 			return c.Status(), err
 		}
 	}
-	if l.tun != nil {
+	if l.tun != nil && !block {
 		tunDNSUp()
 	}
 	return c.Status(), nil
 }
 
+// startGuard — заглушка вместо ядра с VPN-сервером (режим TUN, «Если VPN пропал»):
+// адаптер остаётся, сайты, которые должны идти через VPN, блокируются, остальные — как
+// обычно. Снимается при следующем подключении (apply) или выключении VPN (Stop).
+func (c *Core) guardAfterCrash(gen int, tun *TunOptions) {
+	c.opMu.Lock()
+	defer c.opMu.Unlock()
+	c.mu.Lock()
+	stale := c.gen != gen || c.cmd != nil
+	c.mu.Unlock()
+	if !stale {
+		c.startGuard(tun)
+	}
+}
+
+// startGuard вызывается под opMu.
+func (c *Core) startGuard(tun *TunOptions) {
+	corePath, err := CorePath()
+	if err != nil {
+		log.Printf("заглушка: %v", err)
+		return
+	}
+	g := *tun
+	g.block = true
+	ports, err := freePorts(1)
+	if err != nil {
+		log.Printf("заглушка: %v", err)
+		return
+	}
+	l := coreLayout{port: ports[0], testPort: map[string]int{}, tun: &g}
+	if err := prepareTun(corePath); err != nil {
+		log.Printf("заглушка: %v", err)
+		return
+	}
+	if isMacLegacy() {
+		iface, gw, err := defaultRoute()
+		if err != nil {
+			log.Printf("заглушка: %v", err)
+			return
+		}
+		l.iface, l.gateway = iface, gw
+	}
+	cfg, err := buildConfig(nil, &l)
+	if err != nil {
+		log.Printf("заглушка: %v", err)
+		return
+	}
+	if _, err := c.launch(corePath, l, cfg, "guard"); err != nil {
+		log.Printf("заглушка не запустилась: %v", err)
+		return
+	}
+	log.Printf("VPN недоступен — сайты, которые должны идти через VPN, заблокированы (режим %s)", tun.Mode)
+}
+
+// Stop останавливает ядро (и заглушку) — VPN выключен.
 func (c *Core) Stop() {
+	c.opMu.Lock()
+	defer c.opMu.Unlock()
+	c.mu.Lock()
+	c.gen++
+	c.mu.Unlock()
+	c.stopCore()
+}
+
+func (c *Core) stopCore() {
 	c.mu.Lock()
 	cmd, done := c.cmd, c.done
 	legacyTun := c.layout.tun != nil && isMacLegacy()
@@ -781,7 +886,7 @@ func (c *Core) Select(id string) error {
 	}
 	c.mu.Lock()
 	running := c.cmd != nil
-	known := contains(c.layout.tags, id)
+	known := contains(c.layout.tags, id) || (c.guard && last0(c.last, id))
 	last := c.last
 	c.mu.Unlock()
 	if !running || last == nil {
@@ -795,6 +900,20 @@ func (c *Core) Select(id string) error {
 	c.mu.Unlock()
 	_, err := c.apply(last.servers, id, last.preferredPort, last.tun, true)
 	return err
+}
+
+// last0 — есть ли сервер id в последнем наборе (пока работает заглушка, выбор сервера
+// запускает ядро с этим набором заново).
+func last0(a *applyArgs, id string) bool {
+	if a == nil {
+		return false
+	}
+	for _, s := range a.servers {
+		if s.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // Delay измеряет время ответа testURL через конкретный сервер (через его тестовый SOCKS-порт).
