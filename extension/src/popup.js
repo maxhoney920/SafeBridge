@@ -1,5 +1,5 @@
 import { ext, isFirefox, isApp } from './compat.js';
-import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, detectOldWindows, installSteps, madeBy, MIN_HELPER, versionLess, MODES, LIST_NAMES, presetFor, presetsOf, listsSummary, relatedDomains, ACCOUNT, ACCOUNT_ERRORS, expiringSubs, fmtLeft, subExpire } from './common.js';
+import { el, send, allServers, protoLabel, fmtBytes, fmtAgo, fmtDate, domainMatches, siteDomain, plural, helperDownload, detectOldWindows, installSteps, madeBy, MIN_HELPER, versionLess, MODES, LIST_NAMES, presetFor, presetsOf, listsSummary, relatedDomains, ACCOUNT, ACCOUNT_ERRORS, expiringSubs, fmtLeft, subExpire, BLOCK_HINT_PERMS } from './common.js';
 
 const app = document.getElementById('app');
 let state = null;
@@ -125,8 +125,36 @@ function viewNoSubs() {
 }
 
 // Предупреждения аккаунта в основном окне: вход устарел, подписка заканчивается.
+// Сайт не открылся напрямую — предложить VPN; и один раз предложить включить такие подсказки
+function blockHintBanners() {
+  if (isApp || !ext.permissions) return [];
+  const h = state.blockHintNow;
+  if (h) {
+    return [el('div', { class: 'update warn block-hint' },
+      el('span', { text: `${h.site} не открывается — возможно, сайт заблокирован.` }),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn quiet', disabled: pendingAction === 'blockHint', onclick: () => act('blockHintAccept', { site: h.site }, 'blockHint'), text: h.vpnOff ? 'Включить VPN' : 'Через VPN' }),
+        el('button', { class: 'btn quiet', title: 'Не предлагать для этого сайта', onclick: () => act('blockHintDismiss', { site: h.site, forever: true }, 'blockHint'), text: 'Не надо' })))];
+  }
+  if (!state.blockHint && !state.blockHintAsked && state.mode === 'include') {
+    return [el('div', { class: 'update block-hint' },
+      el('span', { text: 'Подсказывать, если сайт не открывается без VPN?' }),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn quiet', onclick: () => enableBlockHint(), text: 'Включить' }),
+        el('button', { class: 'btn quiet', onclick: () => act('saveSettings', { settings: { blockHintAsked: true } }, 'blockHint'), text: 'Не надо' })))];
+  }
+  return [];
+}
+
+// разрешения запрашиваются прямо в обработчике нажатия — иначе браузер откажет
+function enableBlockHint() {
+  ext.permissions.request(BLOCK_HINT_PERMS)
+    .then((ok) => ok ? act('blockHintSet', { on: true }, 'blockHint') : null)
+    .catch((e) => { actionError = e.message; render(); });
+}
+
 function accountBanners() {
-  const out = [];
+  const out = [...blockHintBanners()];
   const acc = state.account;
   if (acc?.expired) {
     out.push(el('div', { class: 'update warn' },

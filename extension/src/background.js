@@ -1,5 +1,5 @@
 import { ext, isFirefox, action, sessionStore } from './compat.js';
-import { MIN_HELPER, versionLess } from './common.js';
+import { MIN_HELPER, versionLess, siteDomain, BLOCK_HINT_PERMS } from './common.js';
 import { HOST_NAME, DEFAULTS, load, save, allServers, buildPac, normalizeDomain, domainMatches, ACCOUNT, LATEST_URL, DOWNLOAD_BASE, upgradePresets, LISTS_URL, LISTS_PERIOD_MIN, presetsOf, validateLists, listsChanges } from './common.js';
 
 // ---------- связь с помощником ----------
@@ -706,10 +706,157 @@ async function connInfo(st) {
   return conn;
 }
 
+// ---------- подсказка «сайт не открывается» ----------
+// Если сайт, который идёт напрямую, не открылся за 10 секунд (или соединение оборвалось так,
+// как обрывают блокировки), предлагаем открыть его через VPN: уведомление и строка в окне
+// расширения. Нужны необязательные разрешения webNavigation и notifications — пользователь
+// даёт их, когда включает подсказки.
+const NAV_TIMEOUT = 10000;
+const HINT_TTL = 10 * 60 * 1000;
+// Chrome: net::ERR_…; Firefox: коды NS_ERROR_NET_TIMEOUT, NS_ERROR_NET_RESET, NS_ERROR_NET_INTERRUPT
+const BLOCK_ERRORS = /TIMED_OUT|CONNECTION_RESET|CONNECTION_CLOSED|CONNECTION_FAILED|EMPTY_RESPONSE|SSL_PROTOCOL_ERROR|QUIC_PROTOCOL_ERROR|HTTP2_PROTOCOL_ERROR|NET_TIMEOUT|NET_RESET|NET_INTERRUPT|2152398862|2152398868|2152398919/i;
+const PRIVATE_HOST = /^(localhost|\[?::1\]?)$|\.(local|localhost|lan|home|internal|test)$|^(127|10)\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\.|^169\.254\./;
+const navs = new Map(); // вкладка → { url, host, timer }
+const hinted = new Set(); // сайты, о которых уже напоминали (до перезапуска браузера)
+
+function navDone(tabId) {
+  const n = navs.get(tabId);
+  if (n) clearTimeout(n.timer);
+  navs.delete(tabId);
+}
+
+// Пошёл бы этот сайт напрямую (без VPN) — и есть ли смысл предлагать VPN
+async function hintFor(host) {
+  if (!host || PRIVATE_HOST.test(host) || /^[\d.]+$|:/.test(host)) return null;
+  const st = await load();
+  if (!st.blockHint || !allServers(st).some((s) => s.outbound)) return null;
+  const site = siteDomain(host);
+  if (hinted.has(site) || (st.blockHintIgnore || []).includes(site)) return null;
+  if (st.enabled) {
+    if (!core.running || coreError) return null; // VPN включён, но не работает — подсказка не поможет
+    if (st.mode !== 'include' || domainMatches(host, st.include)) return null; // и так идёт через VPN
+  }
+  return { site, host, vpnOff: !st.enabled, mode: st.mode };
+}
+
+async function showBlockHint(tabId, url, host, why) {
+  const h = await hintFor(host);
+  if (!h) return;
+  hinted.add(h.site);
+  const hint = { ...h, tabId, url, why, at: Date.now() };
+  await sessionStore.set({ blockHint: hint });
+  notify();
+  if (!ext.notifications) return;
+  const lead = why === 'timeout' ? `${h.site} не открывается больше 10 секунд.` : `${h.site} не открылся — соединение оборвалось.`;
+  const opts = {
+    type: 'basic',
+    iconUrl: ext.runtime.getURL('icons/app-128.png'),
+    title: 'Попробуйте через VPN',
+    message: `${lead} Возможно, сайт заблокирован.` +
+      (isFirefox ? ' Нажмите, чтобы добавить его в список и открыть через VPN.' : ''),
+  };
+  if (!isFirefox) {
+    opts.buttons = [{ title: h.vpnOff ? 'Включить VPN и открыть' : 'Добавить в список и открыть' }, { title: 'Не предлагать для этого сайта' }];
+    opts.requireInteraction = true;
+  }
+  try {
+    await ext.notifications.create('sb-block:' + h.site, opts);
+  } catch (e) {
+    console.warn('notification', e);
+  }
+}
+
+// «Открыть через VPN»: сайт — в список «Через VPN» (в режиме «Только список»), VPN — включить,
+// страницу — открыть заново
+async function acceptBlockHint(site) {
+  const { blockHint: h } = await sessionStore.get(['blockHint']);
+  const st = await load();
+  if (st.mode === 'include' && !domainMatches(site, st.include)) await handlers.addSite({ list: 'include', domain: site });
+  if (!st.enabled) await handlers.toggle({ on: true });
+  await sessionStore.set({ blockHint: null });
+  ext.notifications?.clear('sb-block:' + site).catch?.(() => {});
+  if (h && h.site === site && h.tabId != null) {
+    try {
+      await ext.tabs.update(h.tabId, { url: h.url, active: true });
+    } catch {}
+  }
+  notify();
+}
+
+async function dismissBlockHint(site, forever) {
+  const { blockHint: h } = await sessionStore.get(['blockHint']);
+  if (!h || h.site === site) await sessionStore.set({ blockHint: null });
+  if (forever && site) {
+    const st = await load();
+    if (!st.blockHintIgnore.includes(site)) await save({ blockHintIgnore: [...st.blockHintIgnore, site].slice(-200) });
+  }
+  ext.notifications?.clear('sb-block:' + site).catch?.(() => {});
+  notify();
+}
+
+let navWatching = false;
+function watchNavigation() {
+  if (navWatching || !ext.webNavigation) return;
+  navWatching = true;
+  ext.webNavigation.onBeforeNavigate.addListener(({ tabId, frameId, url }) => {
+    if (frameId !== 0 || tabId < 0) return;
+    navDone(tabId);
+    let host;
+    try {
+      const u = new URL(url);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return;
+      host = u.hostname.toLowerCase();
+    } catch {
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (navs.get(tabId)?.timer !== timer) return;
+      navs.delete(tabId);
+      showBlockHint(tabId, url, host, 'timeout');
+    }, NAV_TIMEOUT);
+    navs.set(tabId, { url, host, timer });
+  });
+  // сервер ответил — сайт открывается
+  ext.webNavigation.onCommitted.addListener(({ tabId, frameId }) => {
+    if (frameId === 0) navDone(tabId);
+  });
+  ext.webNavigation.onErrorOccurred.addListener(({ tabId, frameId, error }) => {
+    if (frameId !== 0) return;
+    const n = navs.get(tabId);
+    navDone(tabId);
+    if (n && BLOCK_ERRORS.test(String(error || ''))) showBlockHint(tabId, n.url, n.host, 'error');
+  });
+}
+
+ext.tabs.onRemoved?.addListener((id) => navDone(id));
+ext.notifications?.onButtonClicked?.addListener((id, i) => {
+  if (!id.startsWith('sb-block:')) return;
+  const site = id.slice(9);
+  if (i === 0) acceptBlockHint(site);
+  else dismissBlockHint(site, true);
+});
+ext.notifications?.onClicked?.addListener((id) => {
+  if (id.startsWith('sb-block:')) acceptBlockHint(id.slice(9)); // в Firefox у уведомлений нет кнопок
+});
+ext.permissions?.onAdded?.addListener(async (p) => {
+  if (!p.permissions?.includes('webNavigation')) return;
+  watchNavigation();
+  // в Firefox окно расширения закрывается, пока браузер спрашивает разрешение, — включаем здесь
+  await save({ blockHint: true, blockHintAsked: true });
+  notify();
+});
+ext.permissions?.onRemoved?.addListener(async (p) => {
+  if (p.permissions?.includes('webNavigation') || p.permissions?.includes('notifications')) {
+    await save({ blockHint: false });
+    notify();
+  }
+});
+watchNavigation();
+
 async function getState() {
   const st = await load();
   const conn = await connInfo(st);
-  const { pings = {}, pingedAt = 0 } = await sessionStore.get(['pings', 'pingedAt']);
+  const { pings = {}, pingedAt = 0, blockHint = null } = await sessionStore.get(['pings', 'pingedAt', 'blockHint']);
   let control = 'controllable_by_this_extension';
   if (!isFirefox) {
     try {
@@ -731,6 +878,7 @@ async function getState() {
     pings,
     pingedAt,
     conn,
+    blockHintNow: blockHint && Date.now() - blockHint.at < HINT_TTL ? blockHint : null,
     proxyControl: control,
   };
 }
@@ -936,6 +1084,33 @@ const handlers = {
     return getState();
   },
 
+  // включить или выключить подсказки (разрешения окно расширения запрашивает само)
+  async blockHintSet({ on }) {
+    if (on) {
+      const ok = ext.permissions ? await ext.permissions.contains(BLOCK_HINT_PERMS) : false;
+      if (!ok) throw new Error('Браузер не дал разрешение на подсказки');
+      watchNavigation();
+    }
+    await save({ blockHint: !!on, blockHintAsked: true });
+    return getState();
+  },
+
+  async blockHintAccept({ site }) {
+    await acceptBlockHint(String(site || ''));
+    return getState();
+  },
+
+  async blockHintDismiss({ site, forever }) {
+    await dismissBlockHint(String(site || ''), !!forever);
+    return getState();
+  },
+
+  async blockHintIgnoreRemove({ site }) {
+    const st = await load();
+    await save({ blockHintIgnore: st.blockHintIgnore.filter((x) => x !== site) });
+    return getState();
+  },
+
   async saveSettings({ settings }) {
     const patch = {};
     if (settings.intervalMin != null) patch.intervalMin = Math.min(24 * 60, Math.max(15, Number(settings.intervalMin) || 120));
@@ -946,6 +1121,7 @@ const handlers = {
     }
     if (settings.webrtc != null) patch.webrtc = !!settings.webrtc;
     if (settings.killSwitch != null) patch.killSwitch = !!settings.killSwitch;
+    if (settings.blockHintAsked != null) patch.blockHintAsked = !!settings.blockHintAsked;
     if (settings.port != null) {
       const p = Number(settings.port) || 0;
       if (p && (p < 1024 || p > 65535)) throw new Error('Порт должен быть от 1024 до 65535 или 0');

@@ -1,5 +1,5 @@
 import { ext, isFirefox, isApp } from './compat.js';
-import { MIN_HELPER, versionLess } from './common.js';
+import { MIN_HELPER, versionLess, BLOCK_HINT_PERMS } from './common.js';
 import { el, send, fmtBytes, fmtAgo, fmtDate, presetsOf, listsSummary, madeBy, normalizeDomain, plural, MODES, LIST_NAMES, DOWNLOADS_PAGE, ACCOUNT, ACCOUNT_ERRORS, subExpire, expiringSubs, fmtLeft } from './common.js';
 
 const app = document.getElementById('app');
@@ -265,6 +265,23 @@ function sitesSection() {
 
 // ---------- параметры ----------
 
+// Подсказка «сайт не открывается»: сохраняется сразу, разрешения запрашиваются при нажатии
+function blockHintField() {
+  const box = el('input', { type: 'checkbox', id: 'blockHint', checked: !!state.blockHint });
+  box.addEventListener('change', () => {
+    if (!box.checked) return void act('blockHintSet', { on: false }, 'blockHint', 'Подсказки выключены');
+    ext.permissions.request(BLOCK_HINT_PERMS)
+      .then((ok) => ok ? act('blockHintSet', { on: true }, 'blockHint', 'Подсказки включены') : (box.checked = false))
+      .catch(() => { box.checked = false; });
+  });
+  const ignored = state.blockHintIgnore || [];
+  return el('div', { class: 'field' }, el('label', { for: 'blockHint', text: 'Если сайт не открывается' }),
+    el('label', { class: 'check' }, box, el('span', { text: 'Предлагать открыть его через VPN' })),
+    el('div', { class: 'hint', text: 'Если сайт, который идёт без VPN, не открылся за 10 секунд или соединение оборвалось, появится уведомление: добавить сайт в список «Через VPN» и открыть заново. Браузер спросит разрешение на уведомления и на отслеживание загрузки страниц — адреса никуда не отправляются.' }),
+    ignored.length > 0 && el('div', { class: 'hint' }, 'Не предлагать для: ',
+      ...ignored.flatMap((d, i) => [i ? ', ' : '', el('a', { href: '#', title: 'Снова предлагать', text: d + ' ×', onclick: (e) => { e.preventDefault(); act('blockHintIgnoreRemove', { site: d }, 'blockHint'); } })])));
+}
+
 function settingsSection() {
   const interval = el('select', { class: 'input', id: 'interval' },
     [[30, '30 минут'], [60, '1 час'], [120, '2 часа'], [360, '6 часов'], [720, '12 часов'], [1440, '24 часа']]
@@ -285,6 +302,7 @@ function settingsSection() {
       !ext.caps?.tunOnly && el('div', { class: 'field' }, el('label', { for: 'killSwitch', text: 'Если VPN пропал' }),
         el('label', { class: 'check' }, kill, el('span', { text: 'Не открывать сайты напрямую' })),
         el('div', { class: 'hint', text: 'Пока VPN включён, но соединения с сервером нет, сайты, которые должны идти через VPN, не откроются — вместо того чтобы тихо открыться с вашего настоящего адреса.' })),
+      !isApp && ext.permissions && blockHintField(),
       !isApp && el('div', { class: 'field' }, el('label', { for: 'webrtc', text: 'Защита от утечки IP' }),
         el('label', { class: 'check' }, webrtc, el('span', { text: 'Пускать WebRTC только через VPN' })),
         el('div', { class: 'hint', text: 'Работает в режиме «Все сайты». Без неё сайты могут увидеть ваш настоящий IP через звонки и WebRTC.' })),

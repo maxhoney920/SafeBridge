@@ -172,6 +172,9 @@ export const DEFAULTS = {
   listsCheckedAt: 0,
   listsError: '',
   listsUrl: '',        // только для проверок: локальный адрес lists.json
+  blockHint: false,    // подсказывать, если сайт не открывается напрямую (нужны webNavigation и notifications)
+  blockHintAsked: false, // предлагали ли включить подсказки в окне расширения
+  blockHintIgnore: [], // сайты, для которых подсказку не показывать
   expireNotified: {},  // приложение: когда напоминали продлить подписку (подписка:срок → время)
 };
 
@@ -432,3 +435,6 @@ export function plural(n, one, few, many) {
   if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return few;
   return many;
 }
+
+// ---------- подсказка «сайт не открывается» ----------
+export const BLOCK_HINT_PERMS = { permissions: ['webNavigation', 'notifications'] };
