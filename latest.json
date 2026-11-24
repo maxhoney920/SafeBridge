@@ -1,0 +1,64 @@
+{
+  "version": "0.8.4",
+  "xray": "26.9.30",
+  "files": {
+    "darwin-amd64": {
+      "name": "safebridge-darwin-amd64",
+      "sha256": "a5f29ce6a000900aa05da0ed568d9c77309c1b8d436bcdb25843e64f4d46e5ec"
+    },
+    "darwin-arm64": {
+      "name": "safebridge-darwin-arm64",
+      "sha256": "c96acc0bb5ea695b7cc33a6b0861c54a64dcb56e00443252beabd9422132b36b"
+    },
+    "linux-amd64": {
+      "name": "safebridge-linux-amd64",
+      "sha256": "7c6d43d616c8783eee4b657dc733485a9cbe528b0cad2d2e0d4b3ffa05c0b54e"
+    },
+    "linux-arm64": {
+      "name": "safebridge-linux-arm64",
+      "sha256": "00b859844e25f47df6125afbf67613a764323f72c60427560c0eaa545edf24bf"
+    },
+    "windows-amd64": {
+      "name": "safebridge-windows-amd64.exe",
+      "sha256": "d5b8419a1bfedd428c4738352ae8c8332715eabc7a0c2d362739c42c8184e9f8"
+    },
+    "windows-arm64": {
+      "name": "safebridge-windows-arm64.exe",
+      "sha256": "21342da9da6c2ee058b5669855ec39136a6221b89e7d75e707018e39bf9161fc"
+    },
+    "windows7-386": {
+      "name": "safebridge-windows7-386.exe",
+      "sha256": "c47b25671eaded00d802a899391607b40ad64744a810ca78e5fd3dbd21666d53"
+    },
+    "windows7-amd64": {
+      "name": "safebridge-windows7-amd64.exe",
+      "sha256": "6c6528ee2b887c911e820208358ee0e1bb03325ddef652aa35c99dc3d441e4f3"
+    }
+  },
+  "extension": {
+    "version": "0.8.4",
+    "name": "safebridge-extension-0.8.4.zip",
+    "sha256": "8b10d49df383a3e183759d503b4ae02b02ebad723a8e7fd1a3f8e572a2cb1754"
+  },
+  "app": {
+    "version": "1.0.14",
+    "files": {
+      "windows-amd64": {
+        "name": "SafeBridge-1.0.14-windows-x64.exe",
+        "sha256": "965c96762383cabce3d8627abb960054a14ee9367ffbde08a3a1692912f3f27d"
+      },
+      "windows-arm64": {
+        "name": "SafeBridge-1.0.14-windows-arm64.exe",
+        "sha256": "296f3751510cf415b41a70de32c38940c77f5872843cd9f3478b315e94468ad4"
+      },
+      "windows7-amd64": {
+        "name": "SafeBridge-1.0.14-windows7-x64.exe",
+        "sha256": "6ac8448a4c2ce018995c8ff41371f7033629ae371e8dee34799aa8fe8ad5defb"
+      },
+      "windows7-386": {
+        "name": "SafeBridge-1.0.14-windows7-x86.exe",
+        "sha256": "f8453de8dde73b7115d350467f6e48f5f6b8013cee41e4e495b8f041b0bfffd7"
+      }
+    }
+  }
+}
